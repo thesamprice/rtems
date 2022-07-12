@@ -46,6 +46,12 @@
 #include <rtems/score/tls.h>
 #include <rtems/score/wkspace.h>
 
+typedef struct {
+  int id;
+  const char * text;
+}_CPU_esr_ec_code;
+
+
 void _CPU_Initialize( void )
 {
 }
@@ -79,6 +85,22 @@ void _CPU_Context_Initialize(
 
 void _CPU_Exception_frame_print( const CPU_Exception_frame *ctx )
 {
+  /* See ug984-vivado-microblaze-ref Exception Status Register (ESR) */
+  static _CPU_esr_ec_code esr_ec_codes[] = {
+  {0, "Stream Exception"},
+  {1, "Unaligned data access exception"},
+  {2,"Illegal op-code exception"},
+  {3, "Instruction bus error exception"},
+  {4, "Data bus error exception"},
+  {5, "Divide exception"},
+  {6,"Floating point unit exception"},
+  {7, "Privileged instruction or Stack protection violation exception"}, /* Xilinx docs have 2 errors for this id */
+  {16,"Data storage exception"},
+  {17,"Instruction storage exception"},
+  {18,"Data TLB miss exception"},
+  {19,"Instruction TLB miss exception"}
+  };
+
   printk(
     "\n"
     "R0   = 0x%08" PRIx32  " R17  = %p\n"
@@ -133,6 +155,18 @@ void _CPU_Exception_frame_print( const CPU_Exception_frame *ctx )
     ( ctx->msr & MICROBLAZE_MSR_C ) ? "C " : "",
     ( ctx->msr & MICROBLAZE_MSR_IE ) ? "IE " : ""
   );
+
+  const char * esr_ec_txt = "?";
+  int exception_ind = 0;
+  int esr_ec = ctx->esr & 0x1f;
+  for (;exception_ind < sizeof(esr_ec_codes)/sizeof(esr_ec_codes[0]);exception_ind++)
+  {
+    if(esr_ec_codes[exception_ind].id == esr_ec){
+      esr_ec_txt = esr_ec_codes[exception_ind].text;
+    }
+  }
+  printk("ESR: %s\n",esr_ec_txt );
+
 }
 
 void _CPU_ISR_Set_level( uint32_t level )
