@@ -294,9 +294,9 @@ void _CPU_Context_Initialize(
 /* TODO */
 #define _CPU_Fatal_halt(_source, _error ) \
         do { \
-          __asm__ volatile ( "sleep" ); \
+          __asm__ volatile ( "nop" ); \
           for(;;) {} \
-        } while (0)
+        } while (1)
 
 /* end of Fatal Error manager macros */
 
