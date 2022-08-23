@@ -103,7 +103,7 @@ void _CPU_Exception_frame_print( const CPU_Exception_frame *ctx )
 
   printk(
     "\n"
-    "R0   = 0x%08" PRIx32  " R17  = %p\n"
+    "R0   = 0x%08" PRIx32  " R17  = %p <- PC fault\n"
     "R1   = 0x%08" PRIx32  " R18  = 0x%08" PRIx32 "\n"
     "R2   = 0x%08" PRIx32  " R19  = 0x%08" PRIx32 "\n"
     "R3   = 0x%08" PRIx32  " R20  = 0x%08" PRIx32 "\n"
