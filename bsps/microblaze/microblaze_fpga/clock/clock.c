@@ -34,13 +34,13 @@
  */
 
 #include <bsp/fatal.h>
-#include <bsp/timer.h>
-
+#include <bsp/microblaze-timer.h>
 #include <rtems.h>
 #include <rtems/irq-extension.h>
 #include <rtems/timecounter.h>
-
+void microblaze_clock_handler( void * data);
 static rtems_timecounter_simple mblaze_tc;
+static rtems_interrupt_handler mblaze_clock_isr = 0x0;
 
 static uint32_t microblaze_tc_get( rtems_timecounter_simple *tc )
 {
@@ -100,14 +100,11 @@ static void microblaze_clock_initialize( void )
   );
 }
 
+
+
 static void microblaze_clock_at_tick( rtems_timecounter_simple *tc )
 {
-  volatile Microblaze_Timer *timer = _Microblaze_Timer;
-  if ( ( timer->tcsr0 & MICROBLAZE_TIMER_TCSR0_T0INT ) == 0 ) {
-    return;
-  }
-  /* Clear the interrupt */
-  timer->tcsr0 |= MICROBLAZE_TIMER_TCSR0_T0INT;
+
 }
 
 static void microblaze_tc_tick( void )
@@ -119,15 +116,28 @@ static void microblaze_tc_tick( void )
   );
 }
 
-static void microblaze_clock_handler_install( rtems_interrupt_handler isr )
-{
-  rtems_status_code sc = RTEMS_SUCCESSFUL;
+void microblaze_clock_handler( void * data){
 
+  volatile Microblaze_Timer *timer = _Microblaze_Timer;
+  if ( ( timer->tcsr0 & MICROBLAZE_TIMER_TCSR0_T0INT ) != 0 ) 
+  {
+    mblaze_clock_isr(data);
+    /* Clear the interrupt */
+    timer->tcsr0 |= MICROBLAZE_TIMER_TCSR0_T0INT;
+  }
+
+}
+
+static void microblaze_clock_handler_install( void * isr_data)
+{
+  rtems_interrupt_handler isr = (rtems_interrupt_handler) isr_data;
+  rtems_status_code sc = RTEMS_SUCCESSFUL;
+  mblaze_clock_isr = isr;
   sc = rtems_interrupt_handler_install(
     0,
     "Clock",
-    RTEMS_INTERRUPT_UNIQUE,
-    isr,
+    RTEMS_INTERRUPT_SHARED,
+    microblaze_clock_handler,
     NULL
   );
 
@@ -135,6 +145,8 @@ static void microblaze_clock_handler_install( rtems_interrupt_handler isr )
     bsp_fatal( MICROBLAZE_FATAL_CLOCK_IRQ_INSTALL );
   }
 }
+
+
 
 #define Clock_driver_support_initialize_hardware() microblaze_clock_initialize()
 #define Clock_driver_support_install_isr( isr ) \

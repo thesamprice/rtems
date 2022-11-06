@@ -54,7 +54,6 @@ void microblaze_enable_icache(void);
 void microblaze_enable_dcache(void);
 void microblaze_invalidate_icache(void);
 void microblaze_invalidate_dcache(void);
-
 #ifdef __cplusplus
 }
 #endif

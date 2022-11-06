@@ -15,6 +15,7 @@ install:
   source:
   - bsps/microblaze/microblaze_fpga/include/bsp/irq.h
   - bsps/microblaze/microblaze_fpga/include/bsp/jffs2_qspi.h
+  - bsps/microblaze/microblaze_fpga/include/bsp/microblaze-timer.h
   - bsps/microblaze/include/common/xil_types.h
   - bsps/microblaze/include/dev/serial/uartlite.h
   - bsps/microblaze/include/dev/serial/uartlite_l.h
