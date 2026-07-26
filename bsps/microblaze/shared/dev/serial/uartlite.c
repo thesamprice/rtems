@@ -101,10 +101,11 @@ static void uart_last_close(
 )
 {
 #ifdef BSP_MICROBLAZE_FPGA_CONSOLE_INTERRUPTS
-  (void) base;
+  uart_lite_context *ctx = (uart_lite_context *) base;
+
   (void) args;
 
-  rtems_interrupt_handler_remove( 1, microblaze_uart_interrupt, tty );
+  rtems_interrupt_handler_remove( ctx->irq, microblaze_uart_interrupt, tty );
 #else
   (void) tty;
   (void) base;
