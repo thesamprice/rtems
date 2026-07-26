@@ -1,0 +1,17 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-integer: null
+- define: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price
+default:
+- enabled-by: true
+  value: 32
+description: |
+  maximum number of interrupt controller inputs supported by the BSP
+enabled-by: true
+format: '{}'
+links: []
+name: MBV_MAXIMUM_EXTERNAL_INTERRUPTS
+type: build

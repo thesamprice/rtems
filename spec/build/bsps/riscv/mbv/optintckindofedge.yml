@@ -1,0 +1,20 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-integer: null
+- assert-uint32: null
+- format-and-define: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price
+default:
+- enabled-by: true
+  value: 0x00000002
+description: |
+  bit mask of edge-triggered interrupt controller inputs (matches the
+  kind-of-intr property of the QEMU amd-microblaze-v-generic machine, where
+  only input 1, the AXI UART Lite, is edge-triggered)
+enabled-by: true
+format: '{:#010x}'
+links: []
+name: MBV_INTC_KIND_OF_EDGE
+type: build
