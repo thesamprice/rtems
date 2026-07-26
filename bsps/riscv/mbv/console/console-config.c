@@ -8,8 +8,9 @@
  * @brief Console configuration for the AMD MicroBlaze V generic BSP.
  *
  * The console is the Xilinx AXI UART Lite.  The terminal device driver is
- * shared with the MicroBlaze BSPs (bsps/microblaze/shared/dev/serial) and is
- * used in polled mode.
+ * shared with the MicroBlaze BSPs (bsps/microblaze/shared/dev/serial).  It is
+ * interrupt driven by default and polled if the
+ * BSP_MICROBLAZE_FPGA_CONSOLE_INTERRUPTS BSP option is disabled.
  */
 
 /*
@@ -39,6 +40,7 @@
 
 #include <bsp.h>
 #include <bsp/console-termios.h>
+#include <bsp/irq.h>
 
 #include <rtems/bspIo.h>
 
@@ -48,7 +50,10 @@ static uart_lite_context mbv_uart_lite_instance = {
   .base = RTEMS_TERMIOS_DEVICE_CONTEXT_INITIALIZER("UARTLITE"),
   .address = MBV_UART_BASE,
   .initial_baud = BSP_CONSOLE_BAUD,
-  .enabled = 1
+  .enabled = 1,
+#ifdef BSP_MICROBLAZE_FPGA_CONSOLE_INTERRUPTS
+  .irq = MBV_IRQ_UART_LITE
+#endif
 };
 
 const console_device console_device_table[] = {
