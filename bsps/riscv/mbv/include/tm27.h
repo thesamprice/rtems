@@ -8,8 +8,24 @@
  * @brief Time Test 27 support.
  *
  * The interrupt controller does not support software-raised interrupts once
- * the hardware interrupt enable (HIE) bit is set, so the second AXI Timer of
- * the platform is used as a software-controlled interrupt source.
+ * the hardware interrupt enable (HIE) bit is set, so an otherwise unused
+ * peripheral has to act as the software-controlled interrupt source.  The
+ * BSP provides two of them, see bsp_interrupt_raise():  the transmitter
+ * holding register empty interrupt of the 16550 UART and channel 0 of the
+ * second AXI Timer.
+ *
+ * This support uses the 16550, because it is the more immediate of the two:
+ * the register write which enables the interrupt asserts the interrupt
+ * controller input as part of the very same bus access, so the request is
+ * pending by the time Cause_tm27_intr() returns.  The timer needs one timer
+ * clock to underflow, which real hardware delivers within a few processor
+ * cycles but an emulator may take much longer to model.
+ *
+ * This leaves the timer as the raisable interrupt vector without installed
+ * entries which GetTestableInterruptVector() of the validation test suites
+ * searches for.  That search runs before the TM27_INTERRUPT_VECTOR_ALTERNATIVE
+ * fallback and always succeeds here, which is why no alternative interrupt
+ * request is defined below.
  */
 
 /*
@@ -46,36 +62,27 @@
 
 #include <bsp.h>
 #include <bsp/irq.h>
-#include <bsp/mbv.h>
 
 #include <rtems/irq-extension.h>
 #include <rtems/score/isrlevel.h>
 
 #define MUST_WAIT_FOR_INTERRUPT 1
 
-/*
- * The second dual-channel AXI Timer of the QEMU amd-microblaze-v-generic
- * machine, connected to interrupt controller input 6.  It is not used by the
- * clock driver, so tests may program it freely.
- */
-#define TM27_TIMER ((volatile Microblaze_Timer *) 0x41c10000)
+#define TM27_INTERRUPT_VECTOR MBV_INTERRUPT_VECTOR_EXTERNAL( MBV_UART_16550_IRQ )
 
-#define TM27_INTERRUPT_VECTOR MBV_IRQ_TIMER_1
+/*
+ * Tell the validation test suites which interrupt vector Cause_tm27_intr()
+ * raises, instead of making them search the interrupt vector table for the
+ * handler installed by Install_tm27_vector().
+ */
+#define TM27_INTERRUPT_VECTOR_DEFAULT TM27_INTERRUPT_VECTOR
 
 static inline void Install_tm27_vector( rtems_interrupt_handler handler )
 {
-  volatile Microblaze_Timer *timer = TM27_TIMER;
-
-  /* Stop the timer and clear a pending interrupt */
-  timer->tcsr0 = MICROBLAZE_TIMER_TCSR0_T0INT;
-
-  /* Expire almost immediately once the timer is started */
-  timer->tlr0 = 1;
-
   (void) rtems_interrupt_handler_install(
     TM27_INTERRUPT_VECTOR,
     "tm27",
-    RTEMS_INTERRUPT_UNIQUE,
+    RTEMS_INTERRUPT_SHARED,
     handler,
     NULL
   );
@@ -83,28 +90,19 @@ static inline void Install_tm27_vector( rtems_interrupt_handler handler )
 
 static inline void Cause_tm27_intr( void )
 {
-  volatile Microblaze_Timer *timer = TM27_TIMER;
-
-  /* Load the counter and start a one-shot down count */
-  timer->tcsr0 = MICROBLAZE_TIMER_TCSR0_LOAD0;
-  timer->tcsr0 = MICROBLAZE_TIMER_TCSR0_ENIT0 | MICROBLAZE_TIMER_TCSR0_UDT0 |
-    MICROBLAZE_TIMER_TCSR0_ENT0;
+  (void) rtems_interrupt_raise( TM27_INTERRUPT_VECTOR );
 }
 
 static inline void Clear_tm27_intr( void )
 {
-  volatile Microblaze_Timer *timer = TM27_TIMER;
-
-  /* Stop the timer and clear the interrupt */
-  timer->tcsr0 = MICROBLAZE_TIMER_TCSR0_T0INT;
+  (void) rtems_interrupt_clear( TM27_INTERRUPT_VECTOR );
 }
 
 static inline void Lower_tm27_intr( void )
 {
   /*
-   * The interrupt raised by Cause_tm27_intr() is level-sensitive and remains
-   * pending in the interrupt controller, so enabling interrupts is
-   * sufficient to take it.
+   * The raised interrupt remains pending in the interrupt controller, so
+   * enabling interrupts is sufficient to take it.
    */
   _ISR_Set_level( 0 );
 }

@@ -1,0 +1,19 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-integer: null
+- assert-uint32: null
+- format-and-define: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price
+default:
+- enabled-by: true
+  value: 0x41c10000
+description: |
+  base address of the second Xilinx AXI Timer, which is used as the
+  software-raised interrupt source and for Time Test 27
+enabled-by: true
+format: '{:#010x}'
+links: []
+name: MBV_TIMER_2_BASE
+type: build

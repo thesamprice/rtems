@@ -47,6 +47,10 @@ links:
 - role: build-dependency
   uid: opttimerirq
 - role: build-dependency
+  uid: opttimer2base
+- role: build-dependency
+  uid: opttimer2irq
+- role: build-dependency
   uid: optuartbase
 - role: build-dependency
   uid: optuartirq
