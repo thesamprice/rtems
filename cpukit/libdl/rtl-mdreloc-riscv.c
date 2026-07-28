@@ -121,16 +121,36 @@ static int64_t SignExtend64(uint64_t val, unsigned bits) {
   return (int64_t)(((int64_t)(val << (64 - bits))) >> (64 - bits));
 }
 
+static void write8le(void* loc, uint8_t val) {
+  *((uint8_t*)loc) = val;
+}
+
+static uint8_t read8le(void* loc) {
+  return *((uint8_t*)loc);
+}
+
 static void write16le(void* loc, uint16_t val) {
   *((uint16_t*)loc) = val;
 }
 
 static void write32le(void* loc, uint32_t val) {
-  *((uint32_t*)loc) = val;
+  if ((((uintptr_t)loc) & 3) == 0) {
+    *((uint32_t*)loc) = val;
+  } else {
+    write8le(loc, (uint8_t)val);
+    write8le((char*)loc + 1, (uint8_t)(val >> 8));
+    write8le((char*)loc + 2, (uint8_t)(val >> 16));
+    write8le((char*)loc + 3, (uint8_t)(val >> 24));
+  }
 }
 
 static void write64le(void* loc, uint64_t val) {
-  *((uint64_t*)loc) = val;
+  if ((((uintptr_t)loc) & 7) == 0) {
+    *((uint64_t*)loc) = val;
+  } else {
+    write32le(loc, (uint32_t)val);
+    write32le((char*)loc + 4, (uint32_t)(val >> 32));
+  }
 }
 
 static uint16_t read16le(void* loc) {
@@ -138,11 +158,20 @@ static uint16_t read16le(void* loc) {
 }
 
 static uint32_t read32le(void* loc) {
-  return *((uint32_t*)loc);
+  if ((((uintptr_t)loc) & 3) == 0) {
+    return *((uint32_t*)loc);
+  }
+  return (uint32_t)read8le(loc) | ((uint32_t)read8le((char*)loc + 1) << 8) |
+         ((uint32_t)read8le((char*)loc + 2) << 16) |
+         ((uint32_t)read8le((char*)loc + 3) << 24);
 }
 
 static uint64_t read64le(void* loc) {
-  return *((uint64_t*)loc);
+  if ((((uintptr_t)loc) & 7) == 0) {
+    return *((uint64_t*)loc);
+  }
+  return (uint64_t)read32le(loc) |
+         ((uint64_t)read32le((char*)loc + 4) << 32);
 }
 
 static rtems_rtl_elf_rel_status
@@ -157,8 +186,11 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
   char bits = (sizeof(Elf_Word) * 8);
   where = (Elf_Addr*)(sect->base + rela->r_offset);
 
+  // Symbol value with the addend applied
+  Elf_Word target = symvalue + rela->r_addend;
+
   // Final PCREL value
-  Elf_Word pcrel_val = symvalue - ((Elf_Word)(uintptr_t)where);
+  Elf_Word pcrel_val = target - ((Elf_Word)(uintptr_t)where);
 
   if (syminfo == STT_SECTION) {
     return rtems_rtl_elf_rel_no_error;
@@ -200,12 +232,12 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
   } break;
 
   case R_TYPE(RVC_LUI): {
-    int64_t imm = SignExtend64(symvalue + 0x800, bits) >> 12;
+    int64_t imm = SignExtend64(target + 0x800, bits) >> 12;
     if (imm == 0) { // `c.lui rd, 0` is illegal, convert to `c.li rd, 0`
       write16le(where, (read16le(where) & 0x0F83) | 0x4000);
     } else {
-      uint16_t imm17 = extractBits(symvalue + 0x800, 17, 17) << 12;
-      uint16_t imm16_12 = extractBits(symvalue + 0x800, 16, 12) << 2;
+      uint16_t imm17 = extractBits(target + 0x800, 17, 17) << 12;
+      uint16_t imm16_12 = extractBits(target + 0x800, 16, 12) << 2;
       write16le(where, (read16le(where) & 0xEF83) | imm17 | imm16_12);
     }
   } break;
@@ -234,53 +266,53 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
   } break;
 
   case R_TYPE(64):
-    write64le(where, symvalue);
+    write64le(where, target);
     break;
   case R_TYPE(32):
-    write32le(where, symvalue);
+    write32le(where, target);
     break;
 
   case R_TYPE(SET6):
-    *((uint8_t*)where) = (*where & 0xc0) | (symvalue & 0x3f);
+    write8le(where, (read8le(where) & 0xc0) | (target & 0x3f));
     break;
   case R_TYPE(SET8):
-    *((uint8_t*)where) = symvalue;
+    write8le(where, target);
     break;
   case R_TYPE(SET16):
-    write16le(where, symvalue);
+    write16le(where, target);
     break;
   case R_TYPE(SET32):
-    write32le(where, symvalue);
+    write32le(where, target);
     break;
 
   case R_TYPE(ADD8):
-    *((uint8_t*)where) = *((uint8_t*)where) + symvalue;
+    write8le(where, read8le(where) + target);
     break;
   case R_TYPE(ADD16):
-    write16le(where, read16le(where) + symvalue);
+    write16le(where, read16le(where) + target);
     break;
   case R_TYPE(ADD32):
-    write32le(where, read32le(where) + symvalue);
+    write32le(where, read32le(where) + target);
     break;
   case R_TYPE(ADD64):
-    write64le(where, read64le(where) + symvalue);
+    write64le(where, read64le(where) + target);
     break;
 
   case R_TYPE(SUB6):
-    *((uint8_t*)where) =
-        (*where & 0xc0) | (((*where & 0x3f) - symvalue) & 0x3f);
+    write8le(where, (read8le(where) & 0xc0) |
+                        (((read8le(where) & 0x3f) - target) & 0x3f));
     break;
   case R_TYPE(SUB8):
-    *((uint8_t*)where) = *((uint8_t*)where) - symvalue;
+    write8le(where, read8le(where) - target);
     break;
   case R_TYPE(SUB16):
-    write16le(where, read16le(where) - symvalue);
+    write16le(where, read16le(where) - target);
     break;
   case R_TYPE(SUB32):
-    write32le(where, read32le(where) - symvalue);
+    write32le(where, read32le(where) - target);
     break;
   case R_TYPE(SUB64):
-    write64le(where, read64le(where) - symvalue);
+    write64le(where, read64le(where) - target);
     break;
 
   case R_TYPE(32_PCREL): {
@@ -302,7 +334,7 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
   case R_TYPE(GOT_HI20):
   case R_TYPE(HI20): {
 
-    uint64_t hi = symvalue + 0x800;
+    uint64_t hi = target + 0x800;
     write32le(where, (read32le(where) & 0xFFF) | (hi & 0xFFFFF000));
   } break;
 
@@ -314,8 +346,8 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
 
   case R_TYPE(LO12_I): {
 
-    uint64_t hi = (symvalue + 0x800) >> 12;
-    uint64_t lo = symvalue - (hi << 12);
+    uint64_t hi = (target + 0x800) >> 12;
+    uint64_t lo = target - (hi << 12);
     write32le(where, (read32le(where) & 0xFFFFF) | ((lo & 0xFFF) << 20));
 
   } break;
@@ -330,12 +362,21 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
   } break;
 
   case R_TYPE(LO12_S): {
-    uint64_t hi = (symvalue + 0x800) >> 12;
-    uint64_t lo = symvalue - (hi << 12);
+    uint64_t hi = (target + 0x800) >> 12;
+    uint64_t lo = target - (hi << 12);
     uint32_t imm11_5 = extractBits(lo, 11, 5) << 25;
     uint32_t imm4_0 = extractBits(lo, 4, 0) << 7;
     write32le(where, (read32le(where) & 0x1FFF07F) | imm11_5 | imm4_0);
   } break;
+
+  case R_TYPE(ALIGN):
+  case R_TYPE(RELAX):
+    /*
+     * Linker relaxation markers.  The runtime loader performs no linker
+     * relaxation, so the instructions remain in their expanded form and the
+     * alignment padding remains in place:  nothing to do.
+     */
+    break;
 
   case R_TYPE(CALL_PLT):
   case R_TYPE(CALL): {
