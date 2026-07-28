@@ -174,6 +174,41 @@ static uint64_t read64le(void* loc) {
          ((uint64_t)read32le((char*)loc + 4) << 32);
 }
 
+/*
+ * Decode the ULEB128 value at loc.  Returns the number of bytes the encoded
+ * value occupies, or 0 if it is not terminated within max_len bytes.
+ */
+static size_t read_uleb128(void* loc, size_t max_len, uint64_t* val) {
+  uint64_t v = 0;
+  size_t i;
+  for (i = 0; i < max_len; ++i) {
+    uint8_t byte = read8le((char*)loc + i);
+    v |= ((uint64_t)(byte & 0x7f)) << (7 * i);
+    if ((byte & 0x80) == 0) {
+      *val = v;
+      return i + 1;
+    }
+  }
+  return 0;
+}
+
+/*
+ * Encode val as ULEB128 into exactly len bytes at loc, padding with
+ * continuation bytes.  Returns false if the value does not fit.
+ */
+static bool write_uleb128(void* loc, size_t len, uint64_t val) {
+  size_t i;
+  for (i = 0; i < len; ++i) {
+    uint8_t byte = val & 0x7f;
+    val >>= 7;
+    if (i + 1 < len) {
+      byte |= 0x80;
+    }
+    write8le((char*)loc + i, byte);
+  }
+  return val == 0;
+}
+
 static rtems_rtl_elf_rel_status
 rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
                          const rtems_rtl_obj_sect* sect, const char* symname,
@@ -367,6 +402,48 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
     uint32_t imm11_5 = extractBits(lo, 11, 5) << 25;
     uint32_t imm4_0 = extractBits(lo, 4, 0) << 7;
     write32le(where, (read32le(where) & 0x1FFF07F) | imm11_5 | imm4_0);
+  } break;
+
+  case R_TYPE(SET_ULEB128):
+  case R_TYPE(SUB_ULEB128): {
+    /*
+     * These appear in pairs at the same offset, for example for label
+     * differences in .gcc_except_table:  SET_ULEB128 sets the field to S + A
+     * and SUB_ULEB128 subtracts S + A from it.  The encoded field length is
+     * fixed by the assembler and must be preserved.
+     */
+    size_t max_len;
+    uint64_t val;
+    size_t len;
+
+    max_len = sect->size - rela->r_offset;
+    if (max_len > 10) {
+      max_len = 10;
+    }
+
+    len = read_uleb128(where, max_len, &val);
+    if (len == 0) {
+      rtems_rtl_set_error(EINVAL, "%s: unterminated ULEB128 field",
+                          sect->name);
+      return rtems_rtl_elf_rel_failure;
+    }
+
+    if (ELF_R_TYPE(rela->r_info) == R_TYPE(SET_ULEB128)) {
+      val = target;
+    } else {
+      val -= target;
+    }
+
+    /*
+     * SET_ULEB128 and SUB_ULEB128 come in pairs at the same offset.  The
+     * intermediate value written by SET_ULEB128 may exceed the encoded field
+     * width; the arithmetic is carried out modulo the field capacity and
+     * only the final difference has to fit, which the compiler guarantees.
+     */
+    if (len < 10) {
+      val &= (UINT64_C(1) << (7 * len)) - 1;
+    }
+    (void)write_uleb128(where, len, val);
   } break;
 
   case R_TYPE(ALIGN):
