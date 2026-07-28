@@ -49,6 +49,23 @@
 
 RTEMS_INTERRUPT_LOCK_DEFINE(static, mbv_intc_lock, "AXI INTC")
 
+/*
+ * The interrupt controller does not support software-raised interrupts once
+ * the hardware interrupt enable (HIE) bit is set.  Channel 0 of the second
+ * AXI Timer provides the software-raised interrupt instead:  a raise starts
+ * a one-shot count down which expires almost immediately and asserts the
+ * level-sensitive interrupt controller input MBV_TIMER_2_IRQ.  The interrupt
+ * dispatch silences the timer before the interrupt is acknowledged, so the
+ * interrupt behaves like a software-latched interrupt.
+ */
+#define MBV_SOFT_VECTOR MBV_INTERRUPT_VECTOR_EXTERNAL(MBV_TIMER_2_IRQ)
+
+static void mbv_soft_interrupt_silence(void)
+{
+  /* Stop the timer and clear its interrupt condition */
+  MBV_TIMER_2->tcsr0 = MICROBLAZE_TIMER_TCSR0_T0INT;
+}
+
 void _RISCV_Interrupt_dispatch(uintptr_t mcause, Per_CPU_Control *cpu_self)
 {
   (void) cpu_self;
@@ -66,7 +83,15 @@ void _RISCV_Interrupt_dispatch(uintptr_t mcause, Per_CPU_Control *cpu_self)
       uint32_t index = (uint32_t) __builtin_ctz(pending);
       uint32_t mask = UINT32_C(1) << index;
 
-      if ((MBV_INTC_KIND_OF_EDGE & mask) != 0) {
+      if (index == MBV_TIMER_2_IRQ) {
+        /*
+         * Software-raised interrupt: silence the timer before the
+         * acknowledge, otherwise the level-sensitive input is latched again.
+         */
+        mbv_soft_interrupt_silence();
+        MBV_INTC->iar = mask;
+        bsp_interrupt_handler_dispatch(MBV_INTERRUPT_VECTOR_EXTERNAL(index));
+      } else if ((MBV_INTC_KIND_OF_EDGE & mask) != 0) {
         /*
          * Edge-triggered input: acknowledge before the handler runs so that
          * a new edge occurring while the handler executes is latched again.
@@ -93,6 +118,10 @@ void _RISCV_Interrupt_dispatch(uintptr_t mcause, Per_CPU_Control *cpu_self)
 
 void bsp_interrupt_facility_initialize(void)
 {
+  /* Prepare the software-raised interrupt timer: stopped, one-shot count */
+  mbv_soft_interrupt_silence();
+  MBV_TIMER_2->tlr0 = 1;
+
   /* Disable and acknowledge all interrupt controller inputs */
   MBV_INTC->ier = 0;
   MBV_INTC->iar = 0xffffffff;
@@ -121,8 +150,8 @@ rtems_status_code bsp_interrupt_get_attributes(
   attributes->maybe_enable = true;
   attributes->can_disable = true;
   attributes->maybe_disable = true;
-  attributes->can_raise = false;
-  attributes->can_raise_on = false;
+  attributes->can_raise = (vector == MBV_SOFT_VECTOR);
+  attributes->can_raise_on = attributes->can_raise;
   attributes->cleared_by_acknowledge = true;
   attributes->can_get_affinity = false;
   attributes->can_set_affinity = false;
@@ -143,6 +172,13 @@ rtems_status_code bsp_interrupt_is_pending(
     uint32_t index = MBV_INTERRUPT_VECTOR_EXTERNAL_TO_INDEX(vector);
 
     *pending = (MBV_INTC->isr & (UINT32_C(1) << index)) != 0;
+
+    if (vector == MBV_SOFT_VECTOR) {
+      *pending = *pending ||
+        (MBV_TIMER_2->tcsr0 & MICROBLAZE_TIMER_TCSR0_T0INT) != 0 ||
+        (MBV_TIMER_2->tcsr0 & MICROBLAZE_TIMER_TCSR0_ENT0) != 0;
+    }
+
     return RTEMS_SUCCESSFUL;
   }
 
@@ -158,8 +194,16 @@ rtems_status_code bsp_interrupt_is_pending(
 
 rtems_status_code bsp_interrupt_raise(rtems_vector_number vector)
 {
-  (void) vector;
   bsp_interrupt_assert(bsp_interrupt_is_valid_vector(vector));
+
+  if (vector == MBV_SOFT_VECTOR) {
+    /* Load the one-shot count and start the timer */
+    MBV_TIMER_2->tcsr0 = MICROBLAZE_TIMER_TCSR0_LOAD0;
+    MBV_TIMER_2->tcsr0 = MICROBLAZE_TIMER_TCSR0_ENIT0 |
+      MICROBLAZE_TIMER_TCSR0_UDT0 | MICROBLAZE_TIMER_TCSR0_ENT0;
+    return RTEMS_SUCCESSFUL;
+  }
+
   return RTEMS_UNSATISFIED;
 }
 
@@ -169,6 +213,10 @@ rtems_status_code bsp_interrupt_clear(rtems_vector_number vector)
 
   if (MBV_INTERRUPT_VECTOR_IS_EXTERNAL(vector)) {
     uint32_t index = MBV_INTERRUPT_VECTOR_EXTERNAL_TO_INDEX(vector);
+
+    if (vector == MBV_SOFT_VECTOR) {
+      mbv_soft_interrupt_silence();
+    }
 
     MBV_INTC->iar = UINT32_C(1) << index;
     return RTEMS_SUCCESSFUL;

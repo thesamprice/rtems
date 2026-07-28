@@ -46,36 +46,20 @@
 
 #include <bsp.h>
 #include <bsp/irq.h>
-#include <bsp/mbv.h>
 
 #include <rtems/irq-extension.h>
 #include <rtems/score/isrlevel.h>
 
 #define MUST_WAIT_FOR_INTERRUPT 1
 
-/*
- * The second dual-channel AXI Timer of the QEMU amd-microblaze-v-generic
- * machine, connected to interrupt controller input 6.  It is not used by the
- * clock driver, so tests may program it freely.
- */
-#define TM27_TIMER ((volatile Microblaze_Timer *) 0x41c10000)
-
-#define TM27_INTERRUPT_VECTOR MBV_IRQ_TIMER_1
+#define TM27_INTERRUPT_VECTOR MBV_INTERRUPT_VECTOR_EXTERNAL( MBV_TIMER_2_IRQ )
 
 static inline void Install_tm27_vector( rtems_interrupt_handler handler )
 {
-  volatile Microblaze_Timer *timer = TM27_TIMER;
-
-  /* Stop the timer and clear a pending interrupt */
-  timer->tcsr0 = MICROBLAZE_TIMER_TCSR0_T0INT;
-
-  /* Expire almost immediately once the timer is started */
-  timer->tlr0 = 1;
-
   (void) rtems_interrupt_handler_install(
     TM27_INTERRUPT_VECTOR,
     "tm27",
-    RTEMS_INTERRUPT_UNIQUE,
+    RTEMS_INTERRUPT_SHARED,
     handler,
     NULL
   );
@@ -83,28 +67,19 @@ static inline void Install_tm27_vector( rtems_interrupt_handler handler )
 
 static inline void Cause_tm27_intr( void )
 {
-  volatile Microblaze_Timer *timer = TM27_TIMER;
-
-  /* Load the counter and start a one-shot down count */
-  timer->tcsr0 = MICROBLAZE_TIMER_TCSR0_LOAD0;
-  timer->tcsr0 = MICROBLAZE_TIMER_TCSR0_ENIT0 | MICROBLAZE_TIMER_TCSR0_UDT0 |
-    MICROBLAZE_TIMER_TCSR0_ENT0;
+  (void) rtems_interrupt_raise( TM27_INTERRUPT_VECTOR );
 }
 
 static inline void Clear_tm27_intr( void )
 {
-  volatile Microblaze_Timer *timer = TM27_TIMER;
-
-  /* Stop the timer and clear the interrupt */
-  timer->tcsr0 = MICROBLAZE_TIMER_TCSR0_T0INT;
+  (void) rtems_interrupt_clear( TM27_INTERRUPT_VECTOR );
 }
 
 static inline void Lower_tm27_intr( void )
 {
   /*
-   * The interrupt raised by Cause_tm27_intr() is level-sensitive and remains
-   * pending in the interrupt controller, so enabling interrupts is
-   * sufficient to take it.
+   * The raised interrupt remains pending in the interrupt controller, so
+   * enabling interrupts is sufficient to take it.
    */
   _ISR_Set_level( 0 );
 }

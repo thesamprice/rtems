@@ -67,6 +67,15 @@ extern "C" {
  */
 #define MBV_TIMER ((volatile Microblaze_Timer *) MBV_TIMER_BASE)
 
+/**
+ * @brief The second dual-channel AXI Timer of the platform.
+ *
+ * Channel 0 is used as the software-raised interrupt source through
+ * interrupt controller input #MBV_TIMER_2_IRQ, see bsp_interrupt_raise() and
+ * the Time Test 27 support.  Channel 1 is unused.
+ */
+#define MBV_TIMER_2 ((volatile Microblaze_Timer *) MBV_TIMER_2_BASE)
+
 #ifdef __cplusplus
 }
 #endif
