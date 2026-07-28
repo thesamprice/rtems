@@ -404,6 +404,40 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
     write32le(where, (read32le(where) & 0x1FFF07F) | imm11_5 | imm4_0);
   } break;
 
+  /*
+   * TLS local-exec relocations.  For STT_TLS symbols the symbol value
+   * resolved by the runtime loader is already the thread-pointer relative
+   * offset:  RTEMS RISC-V uses TLS variant I with the thread pointer set to
+   * the start of the TLS data area without a bias, and the base image
+   * symbol table exports TLS symbols with their thread-pointer relative
+   * offset as value.  The relocations therefore encode S + A directly.
+   */
+  case R_TYPE(TPREL_HI20): {
+    uint64_t hi = target + 0x800;
+    write32le(where, (read32le(where) & 0xFFF) | (hi & 0xFFFFF000));
+  } break;
+
+  case R_TYPE(TPREL_LO12_I): {
+    uint64_t hi = (target + 0x800) >> 12;
+    uint64_t lo = target - (hi << 12);
+    write32le(where, (read32le(where) & 0xFFFFF) | ((lo & 0xFFF) << 20));
+  } break;
+
+  case R_TYPE(TPREL_LO12_S): {
+    uint64_t hi = (target + 0x800) >> 12;
+    uint64_t lo = target - (hi << 12);
+    uint32_t imm11_5 = extractBits(lo, 11, 5) << 25;
+    uint32_t imm4_0 = extractBits(lo, 4, 0) << 7;
+    write32le(where, (read32le(where) & 0x1FFF07F) | imm11_5 | imm4_0);
+  } break;
+
+  case R_TYPE(TPREL_ADD):
+    /*
+     * Marks the add of the thread pointer for linker relaxation purposes:
+     * nothing to fix up.
+     */
+    break;
+
   case R_TYPE(SET_ULEB128):
   case R_TYPE(SUB_ULEB128): {
     /*
