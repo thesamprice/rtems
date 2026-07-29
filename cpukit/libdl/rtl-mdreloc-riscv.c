@@ -38,6 +38,7 @@
 #include <sys/cdefs.h>
 
 #include <errno.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -209,6 +210,130 @@ static bool write_uleb128(void* loc, size_t len, uint64_t val) {
   return val == 0;
 }
 
+/*
+ * The medium any code model addresses data with an auipc and a following
+ * instruction holding the low 12 bits of the displacement.  The auipc carries
+ * a R_RISCV_PCREL_HI20 relocation for the referenced symbol, the second
+ * instruction a R_RISCV_PCREL_LO12_I or R_RISCV_PCREL_LO12_S relocation whose
+ * symbol is a label at the auipc and not the referenced symbol.  The value to
+ * encode is the low 12 bits of the displacement the auipc computed, which
+ * cannot be recovered from the auipc itself because the instruction only holds
+ * the high 20 bits of it.  The two halves of a pair therefore have to be
+ * matched up by the address of the auipc instruction.
+ *
+ * The high part comes first in the relocation records of a section, so a
+ * bounded circular buffer of the recently processed high parts covers the usual
+ * case:  an entry is only needed between the auipc and the last instruction
+ * pairing with it, and the compiler keeps them close together.  Entries are
+ * looked up newest first, so that a stale entry of an already unloaded object
+ * which happens to alias the address cannot be used in place of the freshly
+ * recorded one.
+ *
+ * The order is reversed if the symbol of the high part is unresolved when the
+ * section is relocated:  the high part is queued as an unresolved relocation
+ * and applied when a later loaded object provides the symbol, while the low
+ * part, whose symbol is a local label and therefore always resolved, is
+ * processed right away.  Such low parts are remembered instead and fixed up
+ * when their high part arrives.  They have to survive until then, which is
+ * beyond the load of the object they belong to, so they are dropped when the
+ * object is unloaded.
+ *
+ * A low part is never fixed up with a guessed value:  if its high part cannot
+ * be found and there is no room left to wait for it, the load fails.
+ */
+#define RTEMS_RTL_RISCV_PCREL_HI20_MAX (32)
+#define RTEMS_RTL_RISCV_PCREL_LO12_MAX (128)
+
+typedef struct {
+  Elf_Word where; /**< Address of the auipc instruction, 0 if unused. */
+  Elf_Addr value; /**< Displacement the auipc instruction computed. */
+} riscv_pcrel_hi20;
+
+typedef struct {
+  Elf_Word hi20; /**< Address of the auipc instruction, 0 if unused. */
+  Elf_Word type; /**< R_RISCV_PCREL_LO12_I or R_RISCV_PCREL_LO12_S. */
+  void* where;   /**< Address of the instruction to fix up. */
+} riscv_pcrel_lo12;
+
+static riscv_pcrel_hi20 riscv_pcrel_hi20s[RTEMS_RTL_RISCV_PCREL_HI20_MAX];
+static size_t riscv_pcrel_hi20_next;
+static riscv_pcrel_lo12 riscv_pcrel_lo12s[RTEMS_RTL_RISCV_PCREL_LO12_MAX];
+
+static bool riscv_pcrel_hi20_find(Elf_Word where, Elf_Addr* value) {
+  size_t i;
+  if (where == 0) {
+    return false;
+  }
+  for (i = 1; i <= RTEMS_RTL_RISCV_PCREL_HI20_MAX; ++i) {
+    size_t j = ((riscv_pcrel_hi20_next + RTEMS_RTL_RISCV_PCREL_HI20_MAX - i) %
+                RTEMS_RTL_RISCV_PCREL_HI20_MAX);
+    if (riscv_pcrel_hi20s[j].where == where) {
+      *value = riscv_pcrel_hi20s[j].value;
+      return true;
+    }
+  }
+  return false;
+}
+
+/*
+ * Encode the low 12 bits of the displacement of the high part of the pair.
+ */
+static void riscv_pcrel_lo12_write(void* where, Elf_Word type,
+                                   Elf_Addr hi20_value) {
+  int64_t lo = SignExtend64(hi20_value, 12);
+
+  if (type == R_TYPE(PCREL_LO12_I)) {
+    write32le(where, (read32le(where) & 0xFFFFF) | ((lo & 0xFFF) << 20));
+  } else {
+    uint32_t imm11_5 = extractBits(lo, 11, 5) << 25;
+    uint32_t imm4_0 = extractBits(lo, 4, 0) << 7;
+    write32le(where, (read32le(where) & 0x1FFF07F) | imm11_5 | imm4_0);
+  }
+}
+
+static void riscv_pcrel_hi20_add(Elf_Word where, Elf_Addr value) {
+  size_t i;
+
+  riscv_pcrel_hi20s[riscv_pcrel_hi20_next].where = where;
+  riscv_pcrel_hi20s[riscv_pcrel_hi20_next].value = value;
+  riscv_pcrel_hi20_next =
+      (riscv_pcrel_hi20_next + 1) % RTEMS_RTL_RISCV_PCREL_HI20_MAX;
+
+  /*
+   * Fix up the low parts which were processed before this high part.
+   */
+  for (i = 0; i < RTEMS_RTL_RISCV_PCREL_LO12_MAX; ++i) {
+    if (riscv_pcrel_lo12s[i].hi20 == where) {
+      riscv_pcrel_lo12_write(riscv_pcrel_lo12s[i].where,
+                             riscv_pcrel_lo12s[i].type, value);
+      riscv_pcrel_lo12s[i].hi20 = 0;
+    }
+  }
+}
+
+static bool riscv_pcrel_lo12_defer(Elf_Word hi20, Elf_Word type, void* where) {
+  size_t i;
+  for (i = 0; i < RTEMS_RTL_RISCV_PCREL_LO12_MAX; ++i) {
+    if (riscv_pcrel_lo12s[i].hi20 == 0) {
+      riscv_pcrel_lo12s[i].hi20 = hi20;
+      riscv_pcrel_lo12s[i].type = type;
+      riscv_pcrel_lo12s[i].where = where;
+      return true;
+    }
+  }
+  return false;
+}
+
+static void riscv_pcrel_lo12_purge(const rtems_rtl_obj* obj) {
+  size_t i;
+  for (i = 0; i < RTEMS_RTL_RISCV_PCREL_LO12_MAX; ++i) {
+    if (riscv_pcrel_lo12s[i].hi20 != 0 &&
+        rtems_rtl_obj_text_inside(obj, riscv_pcrel_lo12s[i].where)) {
+      riscv_pcrel_lo12s[i].hi20 = 0;
+    }
+  }
+}
+
 static rtems_rtl_elf_rel_status
 rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
                          const rtems_rtl_obj_sect* sect, const char* symname,
@@ -218,14 +343,18 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
 
   Elf_Addr* where;
 
-  char bits = (sizeof(Elf_Word) * 8);
+  /*
+   * The width of the address space, not the width of Elf_Word:  Elf64_Word is
+   * a 32-bit type.
+   */
+  char bits = (sizeof(Elf_Addr) * 8);
   where = (Elf_Addr*)(sect->base + rela->r_offset);
 
   // Symbol value with the addend applied
-  Elf_Word target = symvalue + rela->r_addend;
+  Elf_Addr target = symvalue + rela->r_addend;
 
   // Final PCREL value
-  Elf_Word pcrel_val = target - ((Elf_Word)(uintptr_t)where);
+  Elf_Addr pcrel_val = target - ((Elf_Addr)(uintptr_t)where);
 
   if (syminfo == STT_SECTION) {
     return rtems_rtl_elf_rel_no_error;
@@ -240,7 +369,7 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
     break;
 
   case R_TYPE(RVC_BRANCH): {
-    uint16_t insn = ((*where) & 0xFFFF) & 0xE383;
+    uint16_t insn = read16le(where) & 0xE383;
     uint16_t imm8 = extractBits(pcrel_val, 8, 8) << 12;
     uint16_t imm4_3 = extractBits(pcrel_val, 4, 3) << 10;
     uint16_t imm7_6 = extractBits(pcrel_val, 7, 6) << 5;
@@ -252,7 +381,7 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
   } break;
 
   case R_TYPE(RVC_JUMP): {
-    uint16_t insn = ((*where) & 0xFFFF) & 0xE003;
+    uint16_t insn = read16le(where) & 0xE003;
     uint16_t imm11 = extractBits(pcrel_val, 11, 11) << 12;
     uint16_t imm4 = extractBits(pcrel_val, 4, 4) << 11;
     uint16_t imm9_8 = extractBits(pcrel_val, 9, 8) << 9;
@@ -363,7 +492,7 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
   case R_TYPE(PCREL_HI20): {
     int64_t hi = SignExtend64(pcrel_val + 0x800, bits); // pcrel_val + 0x800;
     write32le(where, (read32le(where) & 0xFFF) | (hi & 0xFFFFF000));
-
+    riscv_pcrel_hi20_add((Elf_Word)(uintptr_t)where, pcrel_val);
   } break;
 
   case R_TYPE(GOT_HI20):
@@ -373,10 +502,31 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
     write32le(where, (read32le(where) & 0xFFF) | (hi & 0xFFFFF000));
   } break;
 
-  case R_TYPE(PCREL_LO12_I): {
-    uint64_t hi = (pcrel_val + 0x800) >> 12;
-    uint64_t lo = pcrel_val - (hi << 12);
-    write32le(where, (read32le(where) & 0xFFFFF) | ((lo & 0xFFF) << 20));
+  /*
+   * The symbol of a low part is the label at the auipc of the pair, so the
+   * displacement has to be taken from the high part.  See the comment at
+   * riscv_pcrel_hi20s above.
+   */
+  case R_TYPE(PCREL_LO12_I):
+  case R_TYPE(PCREL_LO12_S): {
+    Elf_Word hi20 = (Elf_Word)target;
+    Elf_Addr hi20_value;
+
+    if (riscv_pcrel_hi20_find(hi20, &hi20_value)) {
+      riscv_pcrel_lo12_write(where, ELF_R_TYPE(rela->r_info), hi20_value);
+    } else if (riscv_pcrel_lo12_defer(hi20, ELF_R_TYPE(rela->r_info), where)) {
+      if (rtems_rtl_trace(RTEMS_RTL_TRACE_RELOC)) {
+        printf("rtl: R_RISCV_PCREL_LO12 @ %p waits for the auipc at %08" PRIxPTR
+               " in %s\n",
+               where, (uintptr_t)hi20, rtems_rtl_obj_oname(obj));
+      }
+    } else {
+      rtems_rtl_set_error(ENOMEM,
+                          "%s: too many R_RISCV_PCREL_LO12 relocations "
+                          "waiting for their R_RISCV_PCREL_HI20 relocation",
+                          sect->name);
+      return rtems_rtl_elf_rel_failure;
+    }
   } break;
 
   case R_TYPE(LO12_I): {
@@ -384,15 +534,6 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
     uint64_t hi = (target + 0x800) >> 12;
     uint64_t lo = target - (hi << 12);
     write32le(where, (read32le(where) & 0xFFFFF) | ((lo & 0xFFF) << 20));
-
-  } break;
-
-  case R_TYPE(PCREL_LO12_S): {
-    uint64_t hi = (pcrel_val + 0x800) >> 12;
-    uint64_t lo = pcrel_val - (hi << 12);
-    uint32_t imm11_5 = extractBits(lo, 11, 5) << 25;
-    uint32_t imm4_0 = extractBits(lo, 4, 0) << 7;
-    write32le(where, (read32le(where) & 0x1FFF07F) | imm11_5 | imm4_0);
 
   } break;
 
@@ -492,9 +633,8 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
   case R_TYPE(CALL_PLT):
   case R_TYPE(CALL): {
     int64_t hi = SignExtend64(pcrel_val + 0x800, bits);
+    int64_t lo = SignExtend64(pcrel_val, 12);
     write32le(where, (read32le(where) & 0xFFF) | (hi & 0xFFFFF000));
-    int64_t hi20 = SignExtend64(pcrel_val + 0x800, bits);
-    int64_t lo = pcrel_val - (hi20 << 12);
     write32le(((char*)where) + 4,
               (read32le(((char*)where) + 4) & 0xFFFFF) | ((lo & 0xFFF) << 20));
   } break;
@@ -550,5 +690,13 @@ bool rtems_rtl_elf_unwind_register(rtems_rtl_obj* obj) {
 }
 
 bool rtems_rtl_elf_unwind_deregister(rtems_rtl_obj* obj) {
+  /*
+   * This is the only per object hook of the unload path in an architecture
+   * backend.  Drop the low parts of the object which are still waiting for
+   * their high part, so that they cannot be fixed up in memory the object no
+   * longer owns:  the allocator hands the same addresses out again to the next
+   * object.
+   */
+  riscv_pcrel_lo12_purge(obj);
   return rtems_rtl_elf_unwind_dw2_deregister(obj);
 }
