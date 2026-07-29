@@ -85,7 +85,7 @@ static void mbv_soft_interrupt_silence(void)
 #define MBV_SOFT_VECTOR_2 MBV_INTERRUPT_VECTOR_EXTERNAL(MBV_UART_16550_IRQ)
 
 #define MBV_UART_16550_IER \
-  (*(volatile uint32_t *) (MBV_UART_16550_BASE + 0x4))
+  (*MBV_DEVICE(uint32_t, MBV_UART_16550_BASE + 0x4))
 
 #define MBV_UART_16550_IER_THRE UINT32_C(0x02)
 

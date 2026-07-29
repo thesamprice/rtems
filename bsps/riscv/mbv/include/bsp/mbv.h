@@ -46,9 +46,18 @@
 #include <bsp/intc.h>
 #include <bsp/microblaze-timer.h>
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/*
+ * The device base addresses are plain integer constants defined by the build
+ * system.  Cast them through uintptr_t so that the device pointers are formed
+ * without an int to pointer conversion of a different width on RV64.
+ */
+#define MBV_DEVICE(type, base) ((volatile type *) (uintptr_t) (base))
 
 /**
  * @brief The AXI Interrupt Controller of the platform.
@@ -56,7 +65,7 @@ extern "C" {
  * Its interrupt output is wired to the Machine External Interrupt (MEIP) of
  * the hart.  There is no PLIC and no CLINT on this platform.
  */
-#define MBV_INTC ((volatile Microblaze_INTC *) MBV_INTC_BASE)
+#define MBV_INTC MBV_DEVICE(Microblaze_INTC, MBV_INTC_BASE)
 
 /**
  * @brief The dual-channel AXI Timer of the platform.
@@ -65,7 +74,7 @@ extern "C" {
  * #MBV_TIMER_IRQ.  Channel 1 is used as a free-running counter for the
  * timecounter and the CPU counter.
  */
-#define MBV_TIMER ((volatile Microblaze_Timer *) MBV_TIMER_BASE)
+#define MBV_TIMER MBV_DEVICE(Microblaze_Timer, MBV_TIMER_BASE)
 
 /**
  * @brief The second dual-channel AXI Timer of the platform.
@@ -74,7 +83,7 @@ extern "C" {
  * interrupt controller input #MBV_TIMER_2_IRQ, see bsp_interrupt_raise() and
  * the Time Test 27 support.  Channel 1 is unused.
  */
-#define MBV_TIMER_2 ((volatile Microblaze_Timer *) MBV_TIMER_2_BASE)
+#define MBV_TIMER_2 MBV_DEVICE(Microblaze_Timer, MBV_TIMER_2_BASE)
 
 #ifdef __cplusplus
 }
