@@ -41,8 +41,12 @@
  *
  * @ingroup RTEMSBSPsRISCV
  *
- * @brief BSP for the AMD MicroBlaze V (RISC-V RV32, M-mode only) as
- *   implemented by the QEMU amd-microblaze-v-generic machine.
+ * @brief BSP for the AMD MicroBlaze V (RISC-V, M-mode only) as implemented by
+ *   the QEMU amd-microblaze-v-generic machine.
+ *
+ * The BSP family provides an RV32 variant (riscv/mbv) and an RV64 variant
+ * (riscv/mbv64).  Both use the same sources; they differ only in the ABI
+ * flags, since the machine model and its devices are identical.
  *
  * @{
  */

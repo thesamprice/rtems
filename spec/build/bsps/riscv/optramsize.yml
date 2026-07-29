@@ -18,7 +18,9 @@ default:
   value: 0x01000000
 - enabled-by: riscv/kendrytek210
   value: 0x00600000
-- enabled-by: riscv/mbv
+- enabled-by:
+  - riscv/mbv
+  - riscv/mbv64
   value: 0x10000000
 - enabled-by: true
   value: 0x04000000
