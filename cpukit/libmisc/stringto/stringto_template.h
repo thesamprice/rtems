@@ -136,9 +136,23 @@ rtems_status_code STRING_TO_NAME(
   }
 #endif
 
-#ifdef STRING_TO_UCHAR_MAX
-  /* special case for uchar */
-  if ( result > STRING_TO_UCHAR_MAX ) {
+  /*
+   * STRING_TO_MAX and STRING_TO_MIN are the saturation values of the
+   * conversion method, which detect an out of range input via ERANGE.  If
+   * STRING_TO_TYPE is narrower than the type returned by the conversion
+   * method, a value can be perfectly representable for the method and still
+   * be out of range for STRING_TO_TYPE.  Such a conversion does not set
+   * ERANGE and has to be range checked explicitly.
+   */
+#ifdef STRING_TO_TYPE_MAX
+  if ( result > STRING_TO_TYPE_MAX ) {
+    errno = ERANGE;
+    return RTEMS_INVALID_NUMBER;
+  }
+#endif
+
+#ifdef STRING_TO_TYPE_MIN
+  if ( result < STRING_TO_TYPE_MIN ) {
     errno = ERANGE;
     return RTEMS_INVALID_NUMBER;
   }

@@ -39,8 +39,10 @@
 
 #include <rtems/stringto.h>
 #define STRING_TO_INTEGER
-#define STRING_TO_TYPE   unsigned int
-#define STRING_TO_NAME   rtems_string_to_unsigned_int
-#define STRING_TO_METHOD strtoul
-#define STRING_TO_MAX    UINT_MAX
+#define STRING_TO_TYPE        unsigned int
+#define STRING_TO_NAME        rtems_string_to_unsigned_int
+#define STRING_TO_METHOD      strtoul
+#define STRING_TO_RESULT_TYPE unsigned long
+#define STRING_TO_MAX         ULONG_MAX
+#define STRING_TO_TYPE_MAX    UINT_MAX
 #include "stringto_template.h"
