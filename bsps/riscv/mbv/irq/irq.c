@@ -66,6 +66,28 @@ static void mbv_soft_interrupt_silence(void)
   MBV_TIMER_2->tcsr0 = MICROBLAZE_TIMER_TCSR0_T0INT;
 }
 
+/*
+ * A second software-raisable interrupt is provided by the transmitter
+ * holding register empty interrupt of the 16550 UART:  with an empty
+ * transmit FIFO, enabling the interrupt in IER asserts the level-sensitive
+ * interrupt controller input and disabling it deasserts it.  The 16550 is
+ * otherwise unused by the BSP; if a console driver is ever added for it,
+ * that driver would own IER and this raise support would have to move to
+ * another device.
+ */
+#define MBV_SOFT_VECTOR_2 MBV_INTERRUPT_VECTOR_EXTERNAL(MBV_UART_16550_IRQ)
+
+#define MBV_UART_16550_IER \
+  (*(volatile uint32_t *) (MBV_UART_16550_BASE + 0x4))
+
+#define MBV_UART_16550_IER_THRE UINT32_C(0x02)
+
+static void mbv_soft_interrupt_2_silence(void)
+{
+  /* Disable the transmitter holding register empty interrupt */
+  MBV_UART_16550_IER = 0;
+}
+
 void _RISCV_Interrupt_dispatch(uintptr_t mcause, Per_CPU_Control *cpu_self)
 {
   (void) cpu_self;
@@ -83,12 +105,16 @@ void _RISCV_Interrupt_dispatch(uintptr_t mcause, Per_CPU_Control *cpu_self)
       uint32_t index = (uint32_t) __builtin_ctz(pending);
       uint32_t mask = UINT32_C(1) << index;
 
-      if (index == MBV_TIMER_2_IRQ) {
+      if (index == MBV_TIMER_2_IRQ || index == MBV_UART_16550_IRQ) {
         /*
-         * Software-raised interrupt: silence the timer before the
+         * Software-raised interrupt: silence the source before the
          * acknowledge, otherwise the level-sensitive input is latched again.
          */
-        mbv_soft_interrupt_silence();
+        if (index == MBV_TIMER_2_IRQ) {
+          mbv_soft_interrupt_silence();
+        } else {
+          mbv_soft_interrupt_2_silence();
+        }
         MBV_INTC->iar = mask;
         bsp_interrupt_handler_dispatch(MBV_INTERRUPT_VECTOR_EXTERNAL(index));
       } else if ((MBV_INTC_KIND_OF_EDGE & mask) != 0) {
@@ -122,6 +148,9 @@ void bsp_interrupt_facility_initialize(void)
   mbv_soft_interrupt_silence();
   MBV_TIMER_2->tlr0 = 1;
 
+  /* Prepare the second software-raised interrupt: 16550 interrupts off */
+  mbv_soft_interrupt_2_silence();
+
   /* Disable and acknowledge all interrupt controller inputs */
   MBV_INTC->ier = 0;
   MBV_INTC->iar = 0xffffffff;
@@ -150,7 +179,8 @@ rtems_status_code bsp_interrupt_get_attributes(
   attributes->maybe_enable = true;
   attributes->can_disable = true;
   attributes->maybe_disable = true;
-  attributes->can_raise = (vector == MBV_SOFT_VECTOR);
+  attributes->can_raise =
+    (vector == MBV_SOFT_VECTOR || vector == MBV_SOFT_VECTOR_2);
   attributes->can_raise_on = attributes->can_raise;
   attributes->cleared_by_acknowledge = true;
   attributes->can_get_affinity = false;
@@ -179,6 +209,11 @@ rtems_status_code bsp_interrupt_is_pending(
         (MBV_TIMER_2->tcsr0 & MICROBLAZE_TIMER_TCSR0_ENT0) != 0;
     }
 
+    if (vector == MBV_SOFT_VECTOR_2) {
+      *pending = *pending ||
+        (MBV_UART_16550_IER & MBV_UART_16550_IER_THRE) != 0;
+    }
+
     return RTEMS_SUCCESSFUL;
   }
 
@@ -204,6 +239,15 @@ rtems_status_code bsp_interrupt_raise(rtems_vector_number vector)
     return RTEMS_SUCCESSFUL;
   }
 
+  if (vector == MBV_SOFT_VECTOR_2) {
+    /*
+     * The transmit FIFO is empty since the BSP never transmits on this
+     * device, so enabling the interrupt asserts it immediately.
+     */
+    MBV_UART_16550_IER = MBV_UART_16550_IER_THRE;
+    return RTEMS_SUCCESSFUL;
+  }
+
   return RTEMS_UNSATISFIED;
 }
 
@@ -216,6 +260,10 @@ rtems_status_code bsp_interrupt_clear(rtems_vector_number vector)
 
     if (vector == MBV_SOFT_VECTOR) {
       mbv_soft_interrupt_silence();
+    }
+
+    if (vector == MBV_SOFT_VECTOR_2) {
+      mbv_soft_interrupt_2_silence();
     }
 
     MBV_INTC->iar = UINT32_C(1) << index;
