@@ -53,10 +53,17 @@ RTEMS_INTERRUPT_LOCK_DEFINE(static, mbv_intc_lock, "AXI INTC")
  * The interrupt controller does not support software-raised interrupts once
  * the hardware interrupt enable (HIE) bit is set.  Channel 0 of the second
  * AXI Timer provides the software-raised interrupt instead:  a raise starts
- * a one-shot count down which expires almost immediately and asserts the
+ * a one-shot count down which expires immediately and asserts the
  * level-sensitive interrupt controller input MBV_TIMER_2_IRQ.  The interrupt
  * dispatch silences the timer before the interrupt is acknowledged, so the
  * interrupt behaves like a software-latched interrupt.
+ *
+ * The load value is zero and not one so that the count down underflows on
+ * the very first timer clock.  This is what makes the raise synchronous
+ * under emulation:  QEMU drives its virtual clock from the wall clock unless
+ * -icount is used, so a count down of even a single timer period is
+ * delivered thousands of instructions after the raise, while a zero count
+ * asserts the interrupt inside the register write which starts the timer.
  */
 #define MBV_SOFT_VECTOR MBV_INTERRUPT_VECTOR_EXTERNAL(MBV_TIMER_2_IRQ)
 
@@ -144,9 +151,9 @@ void _RISCV_Interrupt_dispatch(uintptr_t mcause, Per_CPU_Control *cpu_self)
 
 void bsp_interrupt_facility_initialize(void)
 {
-  /* Prepare the software-raised interrupt timer: stopped, one-shot count */
+  /* Prepare the software-raised interrupt timer: stopped, zero load value */
   mbv_soft_interrupt_silence();
-  MBV_TIMER_2->tlr0 = 1;
+  MBV_TIMER_2->tlr0 = 0;
 
   /* Prepare the second software-raised interrupt: 16550 interrupts off */
   mbv_soft_interrupt_2_silence();
