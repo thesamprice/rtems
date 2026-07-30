@@ -62,13 +62,20 @@
 
 #include <bsp.h>
 #include <bsp/irq.h>
+#include <bsp/mbv.h>
 
 #include <rtems/irq-extension.h>
 #include <rtems/score/isrlevel.h>
 
 #define MUST_WAIT_FOR_INTERRUPT 1
 
-#define TM27_INTERRUPT_VECTOR MBV_INTERRUPT_VECTOR_EXTERNAL( MBV_UART_16550_IRQ )
+/*
+ * The interrupt controller input of the 16550 UART is part of the device
+ * configuration, so this is not a constant expression.  All users evaluate it
+ * at run time.
+ */
+#define TM27_INTERRUPT_VECTOR \
+  MBV_INTERRUPT_VECTOR_EXTERNAL( mbv_cfg.uart_16550_irq )
 
 /*
  * Tell the validation test suites which interrupt vector Cause_tm27_intr()

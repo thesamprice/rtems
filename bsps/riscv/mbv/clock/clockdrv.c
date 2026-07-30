@@ -65,7 +65,7 @@ static uint32_t mbv_clock_get_timecount(struct timecounter *tc)
 
 uint32_t _CPU_Counter_frequency(void)
 {
-  return MBV_TIMER_FREQUENCY;
+  return mbv_cfg.timer_frequency;
 }
 
 CPU_Counter_ticks _CPU_Counter_read(void)
@@ -101,7 +101,7 @@ static void mbv_clock_initialize(void)
 {
   uint64_t us_per_tick = rtems_configuration_get_microseconds_per_tick();
   uint32_t counter_ticks_per_clock_tick =
-    (uint32_t) ((MBV_TIMER_FREQUENCY * us_per_tick) / 1000000);
+    (uint32_t) ((mbv_cfg.timer_frequency * us_per_tick) / 1000000);
   volatile Microblaze_Timer *timer = MBV_TIMER;
 
   /*
@@ -128,7 +128,7 @@ static void mbv_clock_initialize(void)
   /* Install timecounter */
   mbv_clock_tc.tc_get_timecount = mbv_clock_get_timecount;
   mbv_clock_tc.tc_counter_mask = 0xffffffff;
-  mbv_clock_tc.tc_frequency = MBV_TIMER_FREQUENCY;
+  mbv_clock_tc.tc_frequency = mbv_cfg.timer_frequency;
   mbv_clock_tc.tc_quality = RTEMS_TIMECOUNTER_QUALITY_CLOCK_DRIVER;
   rtems_timecounter_install(&mbv_clock_tc);
 }
@@ -188,7 +188,7 @@ static void mbv_clock_handler_install(rtems_interrupt_handler isr)
   rtems_status_code sc;
 
   sc = rtems_interrupt_handler_install(
-    MBV_INTERRUPT_VECTOR_EXTERNAL(MBV_TIMER_IRQ),
+    MBV_INTERRUPT_VECTOR_EXTERNAL(mbv_cfg.timer_irq),
     "Clock",
     RTEMS_INTERRUPT_UNIQUE,
     isr,

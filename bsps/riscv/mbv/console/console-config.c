@@ -41,6 +41,7 @@
 #include <bsp.h>
 #include <bsp/console-termios.h>
 #include <bsp/irq.h>
+#include <bsp/mbv.h>
 
 #include <rtems/bspIo.h>
 
@@ -48,18 +49,32 @@
 
 static uart_lite_context mbv_uart_lite_instance = {
   .base = RTEMS_TERMIOS_DEVICE_CONTEXT_INITIALIZER("UARTLITE"),
-  .address = MBV_UART_BASE,
   .initial_baud = BSP_CONSOLE_BAUD,
-  .enabled = 1,
-#ifdef BSP_MICROBLAZE_FPGA_CONSOLE_INTERRUPTS
-  .irq = MBV_IRQ_UART_LITE
-#endif
+  .enabled = 1
 };
+
+/*
+ * The register base address and the interrupt vector are not available as a
+ * constant expression, so they cannot be part of the static initializer
+ * above.  Take them from the device configuration when the console driver
+ * probes the device, which happens before the device is used.
+ */
+static bool mbv_console_probe(rtems_termios_device_context *base)
+{
+  uart_lite_context *ctx = (uart_lite_context *) base;
+
+  ctx->address = mbv_cfg.uart_base;
+#ifdef BSP_MICROBLAZE_FPGA_CONSOLE_INTERRUPTS
+  ctx->irq = MBV_INTERRUPT_VECTOR_EXTERNAL(mbv_cfg.uart_irq);
+#endif
+
+  return true;
+}
 
 const console_device console_device_table[] = {
   {
     .device_file = "/dev/ttyS0",
-    .probe = console_device_probe_default,
+    .probe = mbv_console_probe,
     .handler = &microblaze_uart_fns,
     .context = &mbv_uart_lite_instance.base
   }
@@ -69,16 +84,18 @@ const size_t console_device_count = RTEMS_ARRAY_SIZE(console_device_table);
 
 static void mbv_output_char(char c)
 {
-  XUartLite_SendByte(MBV_UART_BASE, (u8) c);
+  XUartLite_SendByte(mbv_cfg.uart_base, (u8) c);
 }
 
 static int mbv_poll_char(void)
 {
-  if (XUartLite_IsReceiveEmpty(MBV_UART_BASE)) {
+  uintptr_t base = mbv_cfg.uart_base;
+
+  if (XUartLite_IsReceiveEmpty(base)) {
     return -1;
   }
 
-  return (int) (uint8_t) XUartLite_ReadReg(MBV_UART_BASE, XUL_RX_FIFO_OFFSET);
+  return (int) (uint8_t) XUartLite_ReadReg(base, XUL_RX_FIFO_OFFSET);
 }
 
 BSP_output_char_function_type BSP_output_char = mbv_output_char;
