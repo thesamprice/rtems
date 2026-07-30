@@ -65,7 +65,7 @@ RTEMS_INTERRUPT_LOCK_DEFINE(static, mbv_intc_lock, "AXI INTC")
  * delivered thousands of instructions after the raise, while a zero count
  * asserts the interrupt inside the register write which starts the timer.
  */
-#define MBV_SOFT_VECTOR MBV_INTERRUPT_VECTOR_EXTERNAL(MBV_TIMER_2_IRQ)
+#define MBV_SOFT_VECTOR MBV_INTERRUPT_VECTOR_EXTERNAL(mbv_cfg.timer_2_irq)
 
 static void mbv_soft_interrupt_silence(void)
 {
@@ -82,10 +82,10 @@ static void mbv_soft_interrupt_silence(void)
  * that driver would own IER and this raise support would have to move to
  * another device.
  */
-#define MBV_SOFT_VECTOR_2 MBV_INTERRUPT_VECTOR_EXTERNAL(MBV_UART_16550_IRQ)
+#define MBV_SOFT_VECTOR_2 MBV_INTERRUPT_VECTOR_EXTERNAL(mbv_cfg.uart_16550_irq)
 
 #define MBV_UART_16550_IER \
-  (*MBV_DEVICE(uint32_t, MBV_UART_16550_BASE + 0x4))
+  (*MBV_DEVICE(uint32_t, mbv_cfg.uart_16550_base + 0x4))
 
 #define MBV_UART_16550_IER_THRE UINT32_C(0x02)
 
@@ -106,30 +106,38 @@ void _RISCV_Interrupt_dispatch(uintptr_t mcause, Per_CPU_Control *cpu_self)
   mcause <<= 1;
 
   if (mcause == (RISCV_INTERRUPT_EXTERNAL_MACHINE << 1)) {
+    /*
+     * Hoist the configuration into locals.  This is the per-interrupt hot
+     * path and the values do not change after the system initialization.
+     */
+    volatile Microblaze_INTC *intc = mbv_cfg.intc;
+    uint32_t soft_irq = mbv_cfg.timer_2_irq;
+    uint32_t soft_irq_2 = mbv_cfg.uart_16550_irq;
+    uint32_t kind_of_edge = mbv_cfg.intc_kind_of_edge;
     uint32_t pending;
 
-    while ((pending = (MBV_INTC->isr & MBV_INTC->ier)) != 0) {
+    while ((pending = (intc->isr & intc->ier)) != 0) {
       uint32_t index = (uint32_t) __builtin_ctz(pending);
       uint32_t mask = UINT32_C(1) << index;
 
-      if (index == MBV_TIMER_2_IRQ || index == MBV_UART_16550_IRQ) {
+      if (index == soft_irq || index == soft_irq_2) {
         /*
          * Software-raised interrupt: silence the source before the
          * acknowledge, otherwise the level-sensitive input is latched again.
          */
-        if (index == MBV_TIMER_2_IRQ) {
+        if (index == soft_irq) {
           mbv_soft_interrupt_silence();
         } else {
           mbv_soft_interrupt_2_silence();
         }
-        MBV_INTC->iar = mask;
+        intc->iar = mask;
         bsp_interrupt_handler_dispatch(MBV_INTERRUPT_VECTOR_EXTERNAL(index));
-      } else if ((MBV_INTC_KIND_OF_EDGE & mask) != 0) {
+      } else if ((kind_of_edge & mask) != 0) {
         /*
          * Edge-triggered input: acknowledge before the handler runs so that
          * a new edge occurring while the handler executes is latched again.
          */
-        MBV_INTC->iar = mask;
+        intc->iar = mask;
         bsp_interrupt_handler_dispatch(MBV_INTERRUPT_VECTOR_EXTERNAL(index));
       } else {
         /*
@@ -137,7 +145,7 @@ void _RISCV_Interrupt_dispatch(uintptr_t mcause, Per_CPU_Control *cpu_self)
          * at the device, acknowledge afterwards.
          */
         bsp_interrupt_handler_dispatch(MBV_INTERRUPT_VECTOR_EXTERNAL(index));
-        MBV_INTC->iar = mask;
+        intc->iar = mask;
       }
     }
   } else if (mcause == (RISCV_INTERRUPT_TIMER_MACHINE << 1)) {
