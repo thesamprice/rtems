@@ -33,6 +33,7 @@ source:
 - bsps/riscv/mbv/irq/irq.c
 - bsps/riscv/mbv/start/bspstart.c
 - bsps/riscv/mbv/start/mbv-config.c
+- bsps/riscv/mbv/start/mbv-fdt.c
 - bsps/shared/cache/nocache.c
 - bsps/shared/dev/btimer/btimer-cpucounter.c
 - bsps/shared/dev/getentropy/getentropy-cpucounter.c

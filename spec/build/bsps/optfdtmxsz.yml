@@ -6,6 +6,10 @@ build-type: option
 copyrights:
 - Copyright (C) 2020 embedded brains GmbH & Co. KG
 default:
+- enabled-by:
+  - riscv/mbv
+  - riscv/mbv64
+  value: 32768
 - enabled-by: true
   value: 262144
 description: |

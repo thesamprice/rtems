@@ -62,6 +62,13 @@ extern "C" {
 
 #define BSP_FEATURE_IRQ_EXTENSION
 
+/*
+ * The BSP implements bsp_fdt_copy(), bsp_fdt_get() and bsp_fdt_map_intr(), so
+ * a device tree describing the platform can be handed to it by a boot loader.
+ * bsp_fdt_get() returns an empty but well-formed tree when there is none.
+ */
+#define BSP_FDT_IS_SUPPORTED
+
 #ifdef __cplusplus
 }
 #endif

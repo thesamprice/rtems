@@ -21,6 +21,10 @@ links:
 - role: build-dependency
   uid: ../../optconsolebaud
 - role: build-dependency
+  uid: ../../optfdtmxsz
+- role: build-dependency
+  uid: ../../optfdtuboot
+- role: build-dependency
   uid: ../../optgcc
 - role: build-dependency
   uid: ../grp
