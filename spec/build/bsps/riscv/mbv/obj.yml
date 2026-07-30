@@ -12,6 +12,9 @@ install:
   source:
   - bsps/riscv/mbv/include/bsp.h
   - bsps/riscv/mbv/include/tm27.h
+- destination: ${BSP_INCLUDEDIR}/mbv
+  source:
+  - bsps/riscv/mbv/dts/amd-microblaze-v-generic.dts
 - destination: ${BSP_INCLUDEDIR}/bsp
   source:
   - bsps/riscv/mbv/include/bsp/irq.h
