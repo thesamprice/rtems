@@ -41,6 +41,8 @@ links:
 - role: build-dependency
   uid: optextirqmax
 - role: build-dependency
+  uid: optfdtprobeaddr
+- role: build-dependency
   uid: optintcbase
 - role: build-dependency
   uid: optintckindofedge
