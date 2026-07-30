@@ -63,6 +63,8 @@ links:
 - role: build-dependency
   uid: optuart16550irq
 - role: build-dependency
+  uid: optusefdt
+- role: build-dependency
   uid: ../linkcmds
 - role: build-dependency
   uid: ../linkcmdsbase
