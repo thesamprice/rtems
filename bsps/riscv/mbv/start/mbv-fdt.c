@@ -39,8 +39,10 @@
 #include <bsp/mbv.h>
 
 #include <rtems.h>
+#include <rtems/bspIo.h>
 #include <rtems/sysinit.h>
 
+#include <inttypes.h>
 #include <string.h>
 #include <sys/param.h>
 
@@ -315,18 +317,56 @@ static uint32_t mbv_fdt_u32(
   return fdt32_ld( (const fdt32_t *) val );
 }
 
-/*
+/**
+ * @brief Returns the interrupt controller input of the node.
+ *
  * The interrupt parent of every peripheral is the AXI Interrupt Controller,
  * which uses two interrupt cells.  The first is the controller input, the
  * second the kind of interrupt, which the BSP takes from the kind-of-intr
  * property of the controller itself instead.
+ *
+ * An input the BSP has no vector for is rejected.  The vector count is a
+ * compile time constant, since the generic interrupt support sizes its handler
+ * table with it, so honouring such an input would make the interrupt dispatch
+ * index past the end of that table.  Rejecting it leaves the device on the
+ * input the build option names, which is wrong but bounded.
+ *
+ * This is only reported and never fatal.  It runs before the console driver
+ * exists, so a fatal error here would be an unexplained hang.
+ *
+ * @return The interrupt controller input, or @a fallback.
  */
-#define mbv_fdt_irq( fdt, node, fallback ) \
-  mbv_fdt_u32( fdt, node, "interrupts", fallback )
+static uint32_t mbv_fdt_irq(
+  const void *fdt,
+  int         node,
+  const char *what,
+  uint32_t    fallback
+)
+{
+  uint32_t irq;
+
+  irq = mbv_fdt_u32( fdt, node, "interrupts", fallback );
+
+  if ( irq >= MBV_MAXIMUM_EXTERNAL_INTERRUPTS ) {
+    printk(
+      "mbv: device tree puts the %s on interrupt controller input %" PRIu32
+        ", but only %u inputs are supported, using %" PRIu32 "\n",
+      what,
+      irq,
+      (unsigned int) MBV_MAXIMUM_EXTERNAL_INTERRUPTS,
+      fallback
+    );
+
+    return fallback;
+  }
+
+  return irq;
+}
 
 static void mbv_fdt_configure( const void *fdt )
 {
-  int node;
+  uint32_t inputs;
+  int      node;
 
   node = mbv_fdt_find( fdt, MBV_FDT_INTC_COMPATIBLE, 0 );
 
@@ -341,6 +381,17 @@ static void mbv_fdt_configure( const void *fdt )
       "xlnx,kind-of-intr",
       mbv_cfg.intc_kind_of_edge
     );
+
+    inputs = mbv_fdt_u32( fdt, node, "xlnx,num-intr-inputs", 0 );
+
+    if ( inputs > MBV_MAXIMUM_EXTERNAL_INTERRUPTS ) {
+      printk(
+        "mbv: device tree interrupt controller has %" PRIu32 " inputs, but "
+          "only %u are supported\n",
+        inputs,
+        (unsigned int) MBV_MAXIMUM_EXTERNAL_INTERRUPTS
+      );
+    }
   }
 
   /*
@@ -363,7 +414,8 @@ static void mbv_fdt_configure( const void *fdt )
       "clock-frequency",
       mbv_cfg.timer_frequency
     );
-    mbv_cfg.timer_irq = mbv_fdt_irq( fdt, node, mbv_cfg.timer_irq );
+    mbv_cfg.timer_irq =
+      mbv_fdt_irq( fdt, node, "clock tick timer", mbv_cfg.timer_irq );
   }
 
   node = mbv_fdt_find( fdt, MBV_FDT_TIMER_COMPATIBLE, 1 );
@@ -373,14 +425,16 @@ static void mbv_fdt_configure( const void *fdt )
       Microblaze_Timer,
       mbv_fdt_reg( fdt, node, (uintptr_t) mbv_cfg.timer_2 )
     );
-    mbv_cfg.timer_2_irq = mbv_fdt_irq( fdt, node, mbv_cfg.timer_2_irq );
+    mbv_cfg.timer_2_irq =
+      mbv_fdt_irq( fdt, node, "second timer", mbv_cfg.timer_2_irq );
   }
 
   node = mbv_fdt_find( fdt, MBV_FDT_UARTLITE_COMPATIBLE, 0 );
 
   if ( node >= 0 ) {
     mbv_cfg.uart_base = mbv_fdt_reg( fdt, node, mbv_cfg.uart_base );
-    mbv_cfg.uart_irq = mbv_fdt_irq( fdt, node, mbv_cfg.uart_irq );
+    mbv_cfg.uart_irq =
+      mbv_fdt_irq( fdt, node, "UART Lite", mbv_cfg.uart_irq );
   }
 
   /*
@@ -400,7 +454,8 @@ static void mbv_fdt_configure( const void *fdt )
         base + mbv_fdt_u32( fdt, node, "reg-offset", 0x1000 );
     }
 
-    mbv_cfg.uart_16550_irq = mbv_fdt_irq( fdt, node, mbv_cfg.uart_16550_irq );
+    mbv_cfg.uart_16550_irq =
+      mbv_fdt_irq( fdt, node, "16550 UART", mbv_cfg.uart_16550_irq );
   }
 }
 
