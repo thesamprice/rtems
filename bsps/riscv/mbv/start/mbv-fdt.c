@@ -404,17 +404,59 @@ static void mbv_fdt_configure( const void *fdt )
   }
 }
 
+#endif /* MBV_USE_FDT */
+
+#if MBV_FDT_PROBE_ADDRESS != 0
+/**
+ * @brief Looks for a device tree blob at a fixed address.
+ *
+ * A platform without a boot loader has no way to hand a device tree pointer to
+ * the program, so the only thing left is to agree on an address.  The QEMU
+ * amd-microblaze-v-generic machine is such a platform: it synthesizes no
+ * device tree, has no mask ROM to run before the program, and leaves a1 zero,
+ * but a blob can be loaded anywhere in its address space with
+ *
+ *   -device loader,file=<blob>,addr=<address>,force-raw=on
+ *
+ * The address is validated, and an address at which there is no device tree is
+ * not an error: probing is a guess, and a guess which does not pan out has to
+ * leave the BSP with its build time configuration rather than stop it.  Note
+ * that the address does have to be readable, since there is nothing else that
+ * could tell the difference between unmapped memory and memory holding no
+ * device tree.
+ */
+static void mbv_fdt_probe( void )
+{
+  /*
+   * A device tree from a boot loader wins.  The start code has already copied
+   * it into the blob by the time this runs, which is what makes the pointer
+   * differ from the empty tree.
+   */
+  if ( mbv_fdt != &mbv_fdt_empty_tree[ 0 ] ) {
+    return;
+  }
+
+  bsp_fdt_copy( (const void *) (uintptr_t) MBV_FDT_PROBE_ADDRESS );
+}
+#endif /* MBV_FDT_PROBE_ADDRESS */
+
+#if defined( MBV_USE_FDT ) || MBV_FDT_PROBE_ADDRESS != 0
 /*
- * Resolve the configuration before the interrupt controller is initialized by
- * bsp_start() at RTEMS_SYSINIT_BSP_START and before the free running counter
- * is started at RTEMS_SYSINIT_CPU_COUNTER.  RTEMS_SYSINIT_BSP_EARLY also
- * precedes RTEMS_SYSINIT_ZERO_MEMORY and RTEMS_SYSINIT_WORKSPACE, so a device
- * tree which happens to live inside the RTEMS memory region has already been
- * copied out of it by then.
+ * Find and parse the device tree before the interrupt controller is
+ * initialized by bsp_start() at RTEMS_SYSINIT_BSP_START and before the free
+ * running counter is started at RTEMS_SYSINIT_CPU_COUNTER.
+ * RTEMS_SYSINIT_BSP_EARLY also precedes RTEMS_SYSINIT_ZERO_MEMORY and
+ * RTEMS_SYSINIT_WORKSPACE, so a device tree which happens to live inside the
+ * RTEMS memory region has already been copied out of it by then.
  */
 static void mbv_fdt_initialize( void )
 {
+#if MBV_FDT_PROBE_ADDRESS != 0
+  mbv_fdt_probe();
+#endif
+#ifdef MBV_USE_FDT
   mbv_fdt_configure( mbv_fdt );
+#endif
 }
 
 RTEMS_SYSINIT_ITEM(
@@ -422,4 +464,4 @@ RTEMS_SYSINIT_ITEM(
   RTEMS_SYSINIT_BSP_EARLY,
   RTEMS_SYSINIT_ORDER_FIRST
 );
-#endif /* MBV_USE_FDT */
+#endif
