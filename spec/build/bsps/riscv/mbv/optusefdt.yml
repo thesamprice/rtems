@@ -1,0 +1,18 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-boolean: null
+- define-condition: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price
+default:
+- enabled-by: true
+  value: true
+description: |
+  take the device configuration of the BSP from the device tree returned by
+  bsp_fdt_get(); values which the device tree does not provide keep the value
+  of the corresponding build option
+enabled-by: true
+links: []
+name: MBV_USE_FDT
+type: build
