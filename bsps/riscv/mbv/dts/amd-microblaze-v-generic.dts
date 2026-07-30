@@ -1,0 +1,176 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
+
+/*
+ * Copyright (C) 2026 Samuel Price
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+ * A device tree for the QEMU amd-microblaze-v-generic machine, which
+ * corresponds to the default configuration of the BSP.  On real hardware the
+ * device tree emitted by the Xilinx tooling for the design should be used
+ * instead.
+ *
+ * There is no build rule which turns a BSP device tree source into a blob, so
+ * compile this file by hand:
+ *
+ *     dtc -I dts -O dtb -o amd-microblaze-v-generic.dtb \
+ *         bsps/riscv/mbv/dts/amd-microblaze-v-generic.dts
+ *
+ * The machine does not synthesize a device tree and does not pass a device
+ * tree pointer in a1, so the blob has to be placed in memory and found by the
+ * BSP.  Load it into the LMB BRAM at 0x0, which is outside every RTEMS linker
+ * region and therefore cannot be overwritten by the BSS or the work area, and
+ * build the BSP with MBV_FDT_PROBE_ADDRESS set to the same address:
+ *
+ *     qemu-system-riscv32 -M amd-microblaze-v-generic -m 256m \
+ *         -display none -serial mon:stdio -no-reboot \
+ *         -icount shift=0,sleep=off \
+ *         -device loader,file=ticker.exe,cpu-num=0 \
+ *         -device loader,file=amd-microblaze-v-generic.dtb,addr=0x4000,force-raw=on
+ */
+
+/dts-v1/;
+
+/ {
+	#address-cells = <0x1>;
+	#size-cells = <0x1>;
+	compatible = "amd,microblaze-v-generic";
+	model = "AMD MicroBlaze V Generic";
+
+	cpus {
+		#address-cells = <0x1>;
+		#size-cells = <0x0>;
+		timebase-frequency = <0x5f5e100>;
+
+		cpu@0 {
+			compatible = "amd,microblaze-v", "riscv";
+			device_type = "cpu";
+			reg = <0x0>;
+			clock-frequency = <0x5f5e100>;
+			riscv,isa = "rv32imac";
+			status = "okay";
+		};
+	};
+
+	amba_pl {
+		#address-cells = <0x1>;
+		#size-cells = <0x1>;
+		compatible = "simple-bus";
+		ranges;
+
+		/*
+		 * The interrupt output of the controller is wired to the
+		 * machine external interrupt of the hart, there is no PLIC and
+		 * no CLINT.  The kind-of-intr mask marks input 1, the AXI UART
+		 * Lite, as the only edge sensitive input; this is what the
+		 * machine configures its controller with.
+		 */
+		intc: interrupt-controller@41200000 {
+			#interrupt-cells = <0x2>;
+			compatible = "xlnx,axi-intc-4.1", "xlnx,xps-intc-1.00.a";
+			interrupt-controller;
+			reg = <0x41200000 0x10000>;
+			xlnx,kind-of-intr = <0x2>;
+			xlnx,num-intr-inputs = <0xa>;
+		};
+
+		/*
+		 * The first AXI Timer.  Channel 0 generates the clock tick,
+		 * channel 1 is the free running counter behind the timecounter
+		 * and the CPU counter.
+		 */
+		timer@41c00000 {
+			clock-frequency = <0x5f5e100>;
+			compatible = "xlnx,axi-timer-2.0", "xlnx,xps-timer-1.00.a";
+			interrupt-parent = <&intc>;
+			interrupts = <0x0 0x2>;
+			reg = <0x41c00000 0x10000>;
+			xlnx,count-width = <0x20>;
+			xlnx,one-timer-only = <0x0>;
+		};
+
+		/*
+		 * The second AXI Timer.  Channel 0 is used to raise a software
+		 * interrupt, since the interrupt controller cannot raise one
+		 * once hardware interrupts are enabled.
+		 */
+		timer@41c10000 {
+			clock-frequency = <0x5f5e100>;
+			compatible = "xlnx,axi-timer-2.0", "xlnx,xps-timer-1.00.a";
+			interrupt-parent = <&intc>;
+			interrupts = <0x6 0x2>;
+			reg = <0x41c10000 0x10000>;
+			xlnx,count-width = <0x20>;
+			xlnx,one-timer-only = <0x0>;
+		};
+
+		/* The console device */
+		serial@40600000 {
+			clock-frequency = <0x5f5e100>;
+			compatible = "xlnx,axi-uartlite-2.0", "xlnx,xps-uartlite-1.00.a";
+			current-speed = <0x1c200>;
+			device_type = "serial";
+			interrupt-parent = <&intc>;
+			interrupts = <0x1 0x1>;
+			port-number = <0x0>;
+			reg = <0x40600000 0x10000>;
+			xlnx,baudrate = <0x1c200>;
+			xlnx,data-bits = <0x8>;
+			xlnx,use-parity = <0x0>;
+		};
+
+		/*
+		 * The 16550 UART.  The reg property is the base address of the
+		 * IP; the 16550 register block itself sits at reg-offset into
+		 * it, with the registers spaced 1 << reg-shift bytes apart.
+		 * The machine maps it accordingly at 0x44a11000.
+		 */
+		serial@44a10000 {
+			clock-frequency = <0x5f5e100>;
+			compatible = "xlnx,xps-uart16550-2.00.a", "ns16550a";
+			current-speed = <0x1c200>;
+			device_type = "serial";
+			interrupt-parent = <&intc>;
+			interrupts = <0x4 0x2>;
+			port-number = <0x1>;
+			reg = <0x44a10000 0x10000>;
+			reg-offset = <0x1000>;
+			reg-shift = <0x2>;
+		};
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	aliases {
+		serial0 = "/amba_pl/serial@40600000";
+		serial1 = "/amba_pl/serial@44a10000";
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x80000000 0x10000000>;
+	};
+};
