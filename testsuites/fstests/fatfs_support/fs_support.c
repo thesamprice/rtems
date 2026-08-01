@@ -34,6 +34,15 @@
 #include <tmacros.h>
 
 #include <rtems/fatfs.h>
+/*
+ * The FatFS API types, the f_mkfs() prototype and the fatfs_diskio_*()
+ * prototypes have to come from the FatFS headers themselves.  A local
+ * redeclaration of MKFS_PARM only happens to match the real layout on ILP32:
+ * au_size is a DWORD (uint32_t), so declaring it as an unsigned long moves
+ * every following member on LP64 and f_mkfs() then receives a garbage cluster
+ * size.
+ */
+#include <rtems/fatfs/rtems-fatfs.h>
 #include <rtems/libcsupport.h>
 #include <rtems/libio.h>
 
@@ -42,44 +51,14 @@
 #include "fstest_support.h"
 #include "ramdisk_support.h"
 
-/* Include FatFS headers - these are internal to the FatFS implementation */
-extern int fatfs_diskio_register_device(
-  unsigned char pdrv,
-  const char   *device_path
-);
-extern void fatfs_diskio_unregister_device( unsigned char pdrv );
-
-/* FatFS constants and structures */
-#define FR_OK    0
-#define FM_FAT   0x01
-#define FM_FAT32 0x02
-
-typedef struct {
-  unsigned char fmt;
-  unsigned char num_fat;
-  unsigned int  align;
-  unsigned int  n_root;
-  unsigned long auto_cluster_size;
-} mkfs_parm;
-
-typedef unsigned char FRESULT;
-
-/* FatFS function declaration */
-extern FRESULT f_mkfs(
-  const char      *path,
-  const mkfs_parm *opt,
-  void            *work,
-  unsigned int     len
-);
-
 #define BLOCK_SIZE 512
 
-static const mkfs_parm fatfs_format_options = {
-  .fmt = FM_FAT,         /* Format as FAT12/16 (auto-detect) */
-  .num_fat = 2,          /* Number of FAT copies */
-  .align = 0,            /* Auto data area alignment */
-  .n_root = 512,         /* Number of root directory entries for FAT12/16 */
-  .auto_cluster_size = 0 /* Auto cluster size */
+static const MKFS_PARM fatfs_format_options = {
+  .fmt = FM_FAT, /* Format as FAT12/16 (auto-detect) */
+  .n_fat = 2,    /* Number of FAT copies */
+  .align = 0,    /* Auto data area alignment */
+  .n_root = 512, /* Number of root directory entries for FAT12/16 */
+  .au_size = 0   /* Auto cluster size */
 };
 
 static rtems_resource_snapshot before_mount;

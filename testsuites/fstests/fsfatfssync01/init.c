@@ -38,40 +38,21 @@
 
 #include <rtems/blkdev.h>
 #include <rtems/fatfs.h>
+/*
+ * The FatFS API types, the f_mkfs() prototype and the fatfs_diskio_*()
+ * prototypes have to come from the FatFS headers themselves.  A local
+ * redeclaration of MKFS_PARM only happens to match the real layout on ILP32:
+ * au_size is a DWORD (uint32_t), so declaring it as an unsigned long moves
+ * every following member on LP64 and f_mkfs() then receives a garbage cluster
+ * size.
+ */
+#include <rtems/fatfs/rtems-fatfs.h>
 #include <rtems/libio.h>
 #include <rtems/ramdisk.h>
 
 #include "tmacros.h"
 
 const char rtems_test_name[] = "FSFATFSSYNC 1";
-
-/* FatFS constants and structures */
-#define FR_OK    0
-#define FM_FAT   0x01
-#define FM_FAT32 0x02
-
-typedef struct {
-  unsigned char fmt;
-  unsigned char num_fat;
-  unsigned int  align;
-  unsigned int  n_root;
-  unsigned long auto_cluster_size;
-} MKFS_PARM;
-
-typedef unsigned char FRESULT;
-
-/* External FatFS functions */
-extern int fatfs_diskio_register_device(
-  unsigned char pdrv,
-  const char   *device_path
-);
-extern void    fatfs_diskio_unregister_device( unsigned char pdrv );
-extern FRESULT f_mkfs(
-  const char      *path,
-  const MKFS_PARM *opt,
-  void            *work,
-  unsigned int     len
-);
 
 static unsigned char fatfs_work_buffer[ 4096 ];
 
@@ -138,10 +119,10 @@ static void test( const char *rda, const char *mnt, const char *file )
 {
   static const MKFS_PARM fatfs_format_options = {
     .fmt = FM_FAT,
-    .num_fat = 2,
+    .n_fat = 2,
     .align = 0,
     .n_root = 512,
-    .auto_cluster_size = 0
+    .au_size = 0
   };
 
   int     disk_fd;
