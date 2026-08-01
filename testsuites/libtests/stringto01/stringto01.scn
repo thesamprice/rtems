@@ -26,6 +26,8 @@ rtems_string_to_int - 123 w/endptr return value - RTEMS_SUCCESSFUL
 rtems_string_to_int - YYY w/endptr return value - RTEMS_NOT_DEFINED
 rtems_string_to_int - empty string - w/endptr return value - RTEMS_NOT_DEFINED
 rtems_string_to_int - overflow - RTEMS_INVALID_NUMBER
+rtems_string_to_int - overflow - RTEMS_INVALID_NUMBER
+rtems_string_to_int - underflow - RTEMS_INVALID_NUMBER
 rtems_string_to_int- RTEMS_INVALID_NUMBER
 
 Testing rtems_string_to_unsigned_int
@@ -34,6 +36,7 @@ rtems_string_to_unsigned_int - 123 NULL endptr return value - RTEMS_SUCCESSFUL
 rtems_string_to_unsigned_int - 123 w/endptr return value - RTEMS_SUCCESSFUL
 rtems_string_to_unsigned_int - YYY w/endptr return value - RTEMS_NOT_DEFINED
 rtems_string_to_unsigned_int - empty string - w/endptr return value - RTEMS_NOT_DEFINED
+rtems_string_to_unsigned_int - overflow - RTEMS_INVALID_NUMBER
 rtems_string_to_unsigned_int - overflow - RTEMS_INVALID_NUMBER
 
 Testing rtems_string_to_long

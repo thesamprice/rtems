@@ -70,7 +70,7 @@ static int get_base_10_or_16( const char *s )
 #define STRING_TO_NAME_METHOD        rtems_string_to_unsigned_char
 #define STRING_TO_NAME_METHOD_STRING "rtems_string_to_unsigned_char"
 #define TEST_TOO_LARGE_STRING        "987654321123456789123456789"
-#define TEST_TOO_LARGE_FOR_UCHAR     "256"
+#define TEST_TOO_LARGE_FOR_TYPE      "256"
 #define STRING_TO_INTEGER
 #include "stringto_test_template.h"
 
@@ -83,6 +83,13 @@ static int get_base_10_or_16( const char *s )
 #define STRING_TO_NAME_METHOD_STRING "rtems_string_to_int"
 #define TEST_TOO_LARGE_STRING        "987654321123456789123456789"
 #define TEST_TOO_SMALL_STRING        "-98765432198765432123456789"
+/*
+ * Representable as a long on LP64, but not as an int.  strtol() does not set
+ * ERANGE for these, so they exercise the range check against int rather than
+ * the overflow detection of strtol() itself.
+ */
+#define TEST_TOO_LARGE_FOR_TYPE      "5000000000"
+#define TEST_TOO_SMALL_FOR_TYPE      "-5000000000"
 #define STRING_TO_INTEGER
 #include "stringto_test_template.h"
 
@@ -92,6 +99,8 @@ static int get_base_10_or_16( const char *s )
 #define STRING_TO_NAME_METHOD        rtems_string_to_unsigned_int
 #define STRING_TO_NAME_METHOD_STRING "rtems_string_to_unsigned_int"
 #define TEST_TOO_LARGE_STRING        "987654321123456789123456789"
+/* Representable as an unsigned long on LP64, but not as an unsigned int */
+#define TEST_TOO_LARGE_FOR_TYPE      "5000000000"
 #define STRING_TO_INTEGER
 #include "stringto_test_template.h"
 
