@@ -173,4 +173,9 @@
 		device_type = "memory";
 		reg = <0x80000000 0x10000000>;
 	};
+
+	test@40100000 {
+		compatible = "sifive,test1", "sifive,test0", "syscon";
+		reg = <0x40100000 0x1000>;
+	};
 };
