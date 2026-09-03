@@ -38,11 +38,66 @@
 #if !defined(_RTEMS_RTL_TLS_H_)
 #define _RTEMS_RTL_TLS_H_
 
+#include <rtems/rtl/rtl-obj-fwd.h>
+
+#include <stdbool.h>
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
 void* rtems_rtl_tls_get_base(void);
+
+/**
+ * Is there thread local storage available for loaded objects? Space
+ * has to be reserved in every thread's TLS area by building the
+ * application with CONFIGURE_MAXIMUM_THREAD_LOCAL_STORAGE_SIZE larger
+ * than the base image's TLS allocation.
+ *
+ * @retval size The number of bytes of TLS space available to loaded
+ *              objects.
+ */
+size_t rtems_rtl_tls_avail(void);
+
+/**
+ * Allocate thread local storage for an object file from the space
+ * reserved by CONFIGURE_MAXIMUM_THREAD_LOCAL_STORAGE_SIZE. The offset
+ * is relative to the architecture's TLS thread pointer and is the
+ * value TLS relocations use. The allocator is a bit allocator with a
+ * 32bit word resolution.
+ *
+ * On success the object's tls_offset and tls_size are set.
+ *
+ * @param obj The object file the space is for.
+ * @param size The number of bytes to allocate.
+ * @param alignment The alignment of the block.
+ * @retval true The space was allocated.
+ * @retval false The allocation failed, the RTL error is set.
+ */
+bool rtems_rtl_tls_module_alloc(rtems_rtl_obj* obj, size_t size,
+                                size_t alignment);
+
+/**
+ * Register the object's TLS initialisation image. The image is the
+ * complete TLS block for the object, ie the .tdata content followed
+ * by zeros for the .tbss content, and ownership of the memory passes
+ * to the TLS support. The image is copied into the TLS area of every
+ * existing thread and a thread begin extension installs it into
+ * every thread that begins after this call.
+ *
+ * @param obj The object file the image is for.
+ * @retval true The image is registered.
+ * @retval false The registration failed, the RTL error is set.
+ */
+bool rtems_rtl_tls_module_register(rtems_rtl_obj* obj);
+
+/**
+ * Release an object file's TLS space and initialisation image.
+ *
+ * @param obj The object file being unloaded.
+ */
+void rtems_rtl_tls_module_free(rtems_rtl_obj* obj);
 
 #ifdef __cplusplus
 }
