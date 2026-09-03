@@ -49,6 +49,7 @@
 
 #include "rtl-elf.h"
 #include "rtl-error.h"
+#include "rtl-tls.h"
 #include "rtl-trampoline.h"
 #include "rtl-unwind.h"
 #include <rtems/rtl/rtl-trace.h>
@@ -388,6 +389,7 @@ static bool rtems_rtl_elf_relocate_worker(rtems_rtl_obj* obj, int fd,
   rtems_rtl_obj_cache* strings;
   rtems_rtl_obj_cache* relocs;
   rtems_rtl_obj_sect* targetsect;
+  rtems_rtl_obj_sect tls_shadow;
   rtems_rtl_obj_sect* symsect;
   rtems_rtl_obj_sect* strtab;
   bool is_rela;
@@ -405,10 +407,29 @@ static bool rtems_rtl_elf_relocate_worker(rtems_rtl_obj* obj, int fd,
 
   /*
    * The section muct has been loaded. It could be a separate section in an
-   * archive and not loaded.
+   * archive and not loaded. TLS sections are not loaded to memory but
+   * relocations that target them patch the TLS initialisation image.
    */
-  if ((targetsect->flags & RTEMS_RTL_OBJ_SECT_LOAD) == 0) {
+  if ((targetsect->flags &
+       (RTEMS_RTL_OBJ_SECT_LOAD | RTEMS_RTL_OBJ_SECT_TLS)) == 0) {
     return true;
+  }
+
+  /*
+   * A TLS section's base is a thread pointer relative offset, not an
+   * address. Relocations that target it patch the object's TLS
+   * initialisation image so use a shadow section that points into the
+   * image. The image is only present in the relocation pass, not while
+   * the relocations are parsed.
+   */
+  if ((targetsect->flags & RTEMS_RTL_OBJ_SECT_TLS) != 0) {
+    if (obj->tls_image == NULL) {
+      return true;
+    }
+    tls_shadow = *targetsect;
+    tls_shadow.base = (uint8_t*)obj->tls_image +
+                      ((uintptr_t)targetsect->base - obj->tls_offset);
+    targetsect = &tls_shadow;
   }
 
   rtems_rtl_obj_caches(&symbols, &strings, &relocs);
@@ -888,7 +909,8 @@ static bool rtems_rtl_elf_symbols_load(rtems_rtl_obj* obj, int fd,
         ((ELF_ST_TYPE(symbol.st_info) == STT_OBJECT) ||
          (ELF_ST_TYPE(symbol.st_info) == STT_COMMON) ||
          (ELF_ST_TYPE(symbol.st_info) == STT_FUNC) ||
-         (ELF_ST_TYPE(symbol.st_info) == STT_NOTYPE))) {
+         (ELF_ST_TYPE(symbol.st_info) == STT_NOTYPE) ||
+         (ELF_ST_TYPE(symbol.st_info) == STT_TLS))) {
       /*
        * There needs to be a valid section for the symbol.
        */
@@ -1004,7 +1026,8 @@ static bool rtems_rtl_elf_symbols_load(rtems_rtl_obj* obj, int fd,
         ((ELF_ST_TYPE(symbol.st_info) == STT_OBJECT) ||
          (ELF_ST_TYPE(symbol.st_info) == STT_COMMON) ||
          (ELF_ST_TYPE(symbol.st_info) == STT_FUNC) ||
-         (ELF_ST_TYPE(symbol.st_info) == STT_NOTYPE)) &&
+         (ELF_ST_TYPE(symbol.st_info) == STT_NOTYPE) ||
+         (ELF_ST_TYPE(symbol.st_info) == STT_TLS)) &&
         ((ELF_ST_BIND(symbol.st_info) == STB_GLOBAL) ||
          (ELF_ST_BIND(symbol.st_info) == STB_WEAK) ||
          (ELF_ST_BIND(symbol.st_info) == STB_LOCAL))) {
@@ -1213,6 +1236,58 @@ static bool rtems_rtl_elf_loader(rtems_rtl_obj* obj, int fd,
   return true;
 }
 
+/**
+ * Build the object's TLS initialisation image. The image is the
+ * object's complete TLS block: the .tdata sections' file content at
+ * their offsets in the block and zeros for the .tbss sections. The
+ * image is installed into every thread's TLS area when the object has
+ * been relocated.
+ */
+static bool rtems_rtl_elf_load_tls_image(rtems_rtl_obj* obj, int fd) {
+  rtems_chain_node* node;
+
+  if (obj->tls_size == 0) {
+    return true;
+  }
+
+  obj->tls_image =
+      rtems_rtl_alloc_new(RTEMS_RTL_ALLOC_OBJECT, obj->tls_size, true);
+  if (obj->tls_image == NULL) {
+    rtems_rtl_set_error(ENOMEM, "no memory for TLS image");
+    return false;
+  }
+
+  node = rtems_chain_first(&obj->sections);
+  while (!rtems_chain_is_tail(&obj->sections, node)) {
+    rtems_rtl_obj_sect* sect = (rtems_rtl_obj_sect*)node;
+    if ((sect->flags & (RTEMS_RTL_OBJ_SECT_TLS | RTEMS_RTL_OBJ_SECT_ZERO)) ==
+            RTEMS_RTL_OBJ_SECT_TLS &&
+        sect->size != 0) {
+      uint8_t* image = (uint8_t*)obj->tls_image +
+                       ((uintptr_t)sect->base - obj->tls_offset);
+      size_t len = sect->size;
+
+      if (lseek(fd, obj->ooffset + sect->offset, SEEK_SET) < 0) {
+        rtems_rtl_set_error(errno, "TLS section load seek failed");
+        return false;
+      }
+
+      while (len) {
+        ssize_t r = read(fd, image, len);
+        if (r <= 0) {
+          rtems_rtl_set_error(errno, "TLS section load read failed");
+          return false;
+        }
+        image += r;
+        len -= r;
+      }
+    }
+    node = rtems_chain_next(node);
+  }
+
+  return true;
+}
+
 static bool rtems_rtl_elf_parse_sections(rtems_rtl_obj* obj, int fd,
                                          Elf_Ehdr* ehdr) {
   rtems_rtl_obj_cache* sects;
@@ -1289,9 +1364,14 @@ static bool rtems_rtl_elf_parse_sections(rtems_rtl_obj* obj, int fd,
        * There are 2 program bits sections. One is the program text and the
        * other is the program data. The program text is flagged
        * alloc/executable and the program data is flagged alloc/writable.
+       * TLS data sections (.tdata) are not loaded to memory; they are
+       * located at thread pointer relative offsets in the object's TLS
+       * block and their content becomes the block's initialisation image.
        */
       if ((shdr.sh_flags & SHF_ALLOC) == SHF_ALLOC) {
-        if ((shdr.sh_flags & SHF_EXECINSTR) == SHF_EXECINSTR) {
+        if ((shdr.sh_flags & SHF_TLS) == SHF_TLS) {
+          flags = RTEMS_RTL_OBJ_SECT_TLS;
+        } else if ((shdr.sh_flags & SHF_EXECINSTR) == SHF_EXECINSTR) {
           flags = RTEMS_RTL_OBJ_SECT_TEXT | RTEMS_RTL_OBJ_SECT_LOAD;
         } else if ((shdr.sh_flags & SHF_WRITE) == SHF_WRITE) {
           flags = RTEMS_RTL_OBJ_SECT_DATA | RTEMS_RTL_OBJ_SECT_LOAD;
@@ -1304,11 +1384,17 @@ static bool rtems_rtl_elf_parse_sections(rtems_rtl_obj* obj, int fd,
     case SHT_NOBITS:
       /*
        * There is 1 NOBIT section which is the .bss section. There is nothing
-       * but a definition as the .bss is just a clear region of memory.
+       * but a definition as the .bss is just a clear region of memory. TLS
+       * bss sections (.tbss) are located in the object's TLS block and are
+       * zero in the block's initialisation image.
        */
       if ((shdr.sh_flags & (SHF_ALLOC | SHF_WRITE)) ==
           (SHF_ALLOC | SHF_WRITE)) {
-        flags = RTEMS_RTL_OBJ_SECT_BSS | RTEMS_RTL_OBJ_SECT_ZERO;
+        if ((shdr.sh_flags & SHF_TLS) == SHF_TLS) {
+          flags = RTEMS_RTL_OBJ_SECT_TLS | RTEMS_RTL_OBJ_SECT_ZERO;
+        } else {
+          flags = RTEMS_RTL_OBJ_SECT_BSS | RTEMS_RTL_OBJ_SECT_ZERO;
+        }
       }
       break;
 
@@ -1703,9 +1789,24 @@ bool rtems_rtl_elf_file_load(rtems_rtl_obj* obj, int fd) {
   }
 
   /*
+   * Build the TLS initialisation image before the relocations are fixed
+   * up; relocations that target TLS sections patch the image.
+   */
+  if (!rtems_rtl_elf_load_tls_image(obj, fd)) {
+    return false;
+  }
+
+  /*
    * Fix up the relocations.
    */
   if (!rtems_rtl_obj_relocate(obj, fd, rtems_rtl_elf_relocs_locator, &ehdr)) {
+    return false;
+  }
+
+  /*
+   * Install the TLS image into every thread's TLS area.
+   */
+  if (obj->tls_size != 0 && !rtems_rtl_tls_module_register(obj)) {
     return false;
   }
 

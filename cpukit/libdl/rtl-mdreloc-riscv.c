@@ -630,6 +630,16 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
      */
     break;
 
+  case R_TYPESZ(TLS_TPREL): {
+    /*
+     * TLS initial-exec: a GOT style word holding the thread pointer
+     * relative offset of the symbol, which the runtime loader has
+     * already resolved for both base image and loaded object TLS
+     * variables.
+     */
+    *where = target;
+  } break;
+
   case R_TYPE(CALL_PLT):
   case R_TYPE(CALL): {
     int64_t hi = SignExtend64(pcrel_val + 0x800, bits);

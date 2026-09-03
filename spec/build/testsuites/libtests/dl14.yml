@@ -1,0 +1,39 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+build-type: script
+cflags: []
+copyrights:
+- Copyright (C) 2026 Samuel Price <thesamprice@gmail.com>
+cppflags: []
+do-build: |
+  path = "testsuites/libtests/dl14/"
+  objs = []
+  objs.append(self.cc(bld, bic, path + "dl14-o1.c"))
+  tar = path + "dl14.tar"
+  self.tar(bld, objs, [path], tar)
+  tar_c, tar_h = self.bin2c(bld, tar)
+  objs = []
+  objs.append(self.cc(bld, bic, tar_c))
+  objs.append(self.cc(bld, bic, path + "init.c", deps=[tar_h, "cpukit/include/rtems/score/cpuopts.h"], cppflags=bld.env.TEST_DL14_CPPFLAGS))
+  objs.append(self.cc(bld, bic, path + "dl-load.c"))
+  dl14_pre = path + "dl14.pre"
+  self.link_cc(bld, bic, objs, dl14_pre)
+  dl14_sym_o = path + "dl14-sym.o"
+  objs.append(dl14_sym_o)
+  self.rtems_syms(bld, bic, dl14_pre, dl14_sym_o)
+  self.link_cc(bld, bic, objs, "testsuites/libtests/dl14.exe")
+do-configure: null
+enabled-by:
+- and:
+  - not: TEST_DL14_EXCLUDE
+  - BUILD_LIBDL
+includes:
+- testsuites/libtests/dl14
+ldflags: []
+links: []
+prepare-build: null
+prepare-configure: null
+stlib: []
+target: testsuites/libtests/dl14.exe
+type: build
+use-after: []
+use-before: []
