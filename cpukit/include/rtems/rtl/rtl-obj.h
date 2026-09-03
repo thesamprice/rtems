@@ -261,6 +261,14 @@ struct rtems_rtl_obj {
   size_t tramp_relocs;             /**< Number of slots reserved for
                                     *   relocs. The remainder are for
                                     *   unresolved symbols. */
+  size_t tls_offset;               /**< Thread pointer relative offset of
+                                    *   the object's TLS block. */
+  size_t tls_size;                 /**< The size of the object's TLS
+                                    *   block. Zero if the object has no
+                                    *   TLS variables. */
+  void* tls_image;                 /**< The TLS block initialisation
+                                    *   image, tls_size bytes. */
+  void* tls_region;                /**< TLS support region record. */
   struct link_map* linkmap;        /**< For GDB. */
   void* loader;                    /**< The file details specific to a
                                     *   loader. */
@@ -731,6 +739,24 @@ size_t rtems_rtl_obj_bss_size(const rtems_rtl_obj* obj);
  * alignment.
  */
 uint32_t rtems_rtl_obj_bss_alignment(const rtems_rtl_obj* obj);
+
+/**
+ * The TLS block size for the object file. Only use once all the sections
+ * have been added. It includes alignments between the TLS sections.
+ *
+ * @param obj The object file's descriptor.
+ * @return size_t The size of the TLS block of the object file.
+ */
+size_t rtems_rtl_obj_tls_size(const rtems_rtl_obj* obj);
+
+/**
+ * The TLS block alignment for the object file. The maximum alignment of
+ * all TLS sections in the object.
+ *
+ * @param obj The object file's descriptor.
+ * @return uint32_t The alignment. Can be 0 or 1 for not aligned.
+ */
+uint32_t rtems_rtl_obj_tls_alignment(const rtems_rtl_obj* obj);
 
 /**
  * The trampoline size.

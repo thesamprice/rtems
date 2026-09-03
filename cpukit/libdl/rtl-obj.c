@@ -49,6 +49,7 @@
 #include "rtl-error.h"
 #include "rtl-find-file.h"
 #include "rtl-string.h"
+#include "rtl-tls.h"
 #include <rtems/rtl/rtl-obj.h>
 #include <rtems/rtl/rtl-trace.h>
 #include <rtems/rtl/rtl.h>
@@ -129,6 +130,7 @@ bool rtems_rtl_obj_free(rtems_rtl_obj* obj) {
   }
   rtems_rtl_alloc_module_del(&obj->text_base, &obj->const_base, &obj->eh_base,
                              &obj->data_base, &obj->bss_base);
+  rtems_rtl_tls_module_free(obj);
   rtems_rtl_obj_erase_sections(obj);
   rtems_rtl_obj_erase_dependents(obj);
   rtems_rtl_symbol_obj_erase(obj);
@@ -696,6 +698,29 @@ size_t rtems_rtl_obj_bss_size(const rtems_rtl_obj* obj) {
   return rtems_rtl_obj_section_size(obj, RTEMS_RTL_OBJ_SECT_BSS);
 }
 
+size_t rtems_rtl_obj_tls_size(const rtems_rtl_obj* obj) {
+  return rtems_rtl_obj_section_size(obj, RTEMS_RTL_OBJ_SECT_TLS);
+}
+
+uint32_t rtems_rtl_obj_tls_alignment(const rtems_rtl_obj* obj) {
+  /*
+   * The TLS block base must meet the alignment of every TLS section
+   * in the block, not just the first one, because the sections are
+   * located relative to the block base.
+   */
+  rtems_chain_node* node = rtems_chain_first(&obj->sections);
+  uint32_t alignment = 0;
+  while (!rtems_chain_is_tail(&obj->sections, node)) {
+    rtems_rtl_obj_sect* sect = (rtems_rtl_obj_sect*)node;
+    if ((sect->flags & RTEMS_RTL_OBJ_SECT_TLS) != 0 &&
+        sect->alignment > alignment) {
+      alignment = sect->alignment;
+    }
+    node = rtems_chain_next(node);
+  }
+  return alignment;
+}
+
 size_t rtems_rtl_obj_tramp_size(const rtems_rtl_obj* obj) {
   return obj->tramp_slots * obj->tramp_slot_size;
 }
@@ -974,11 +999,23 @@ static void rtems_rtl_obj_locate(rtems_rtl_obj* obj) {
       RTEMS_RTL_OBJ_SECT_DATA, rtems_rtl_alloc_data_tag(), obj, obj->data_base);
   rtems_rtl_obj_sections_locate(RTEMS_RTL_OBJ_SECT_BSS,
                                 rtems_rtl_alloc_bss_tag(), obj, obj->bss_base);
+  if (obj->tls_size != 0) {
+    /*
+     * TLS sections are located at thread pointer relative offsets in
+     * the object's TLS block, not at addresses; the section base is
+     * the offset. The block was allocated by the TLS support.
+     */
+    rtems_rtl_obj_sections_locate(RTEMS_RTL_OBJ_SECT_TLS,
+                                  rtems_rtl_alloc_bss_tag(), obj,
+                                  (uint8_t*)(uintptr_t)obj->tls_offset);
+  }
 }
 
 bool rtems_rtl_obj_alloc_sections(rtems_rtl_obj* obj, int fd,
                                   rtems_rtl_obj_sect_handler handler,
                                   void* data) {
+  size_t tls_size;
+
   rtems_rtl_obj_set_sizes(obj);
 
   /*
@@ -990,6 +1027,20 @@ bool rtems_rtl_obj_alloc_sections(rtems_rtl_obj* obj, int fd,
       obj->exec_size = 0;
       return false;
     }
+  }
+
+  /*
+   * Allocate the object's TLS block from the extra TLS space in every
+   * thread's TLS area.
+   */
+  tls_size = rtems_rtl_obj_tls_size(obj);
+  if (tls_size != 0 && obj->tls_region == NULL) {
+    if (!rtems_rtl_tls_module_alloc(obj, tls_size,
+                                    rtems_rtl_obj_tls_alignment(obj))) {
+      obj->exec_size = 0;
+      return false;
+    }
+    rtems_rtl_obj_sections_link_order(RTEMS_RTL_OBJ_SECT_TLS, obj);
   }
 
   /*

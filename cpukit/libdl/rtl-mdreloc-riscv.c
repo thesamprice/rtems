@@ -337,6 +337,68 @@ rtems_rtl_elf_reloc_rela(rtems_rtl_obj* obj, const Elf_Rela* rela,
     write32le(where, (read32le(where) & 0x1FFF07F) | imm11_5 | imm4_0);
   } break;
 
+  case R_TYPE(TPREL_HI20): {
+    /*
+     * TLS local-exec. The symbol value is a thread pointer relative
+     * offset, set by the base image linker for base image TLS
+     * variables and by the TLS allocator for TLS variables in loaded
+     * objects.
+     */
+    uint64_t tprel = symvalue + rela->r_addend + 0x800;
+    write32le(where, (read32le(where) & 0xFFF) | (tprel & 0xFFFFF000));
+
+    if (rtems_rtl_trace(RTEMS_RTL_TRACE_RELOC)) {
+      printf("rtl: R_RISCV_TPREL_HI20 %p @ %p in %s\n", (void*)*(where), where,
+             rtems_rtl_obj_oname(obj));
+    }
+  } break;
+
+  case R_TYPE(TPREL_LO12_I): {
+    uint64_t tprel = symvalue + rela->r_addend;
+    uint64_t hi = (tprel + 0x800) >> 12;
+    uint64_t lo = tprel - (hi << 12);
+    write32le(where, (read32le(where) & 0xFFFFF) | ((lo & 0xFFF) << 20));
+
+    if (rtems_rtl_trace(RTEMS_RTL_TRACE_RELOC)) {
+      printf("rtl: R_RISCV_TPREL_LO12_I %p @ %p in %s\n", (void*)*(where),
+             where, rtems_rtl_obj_oname(obj));
+    }
+  } break;
+
+  case R_TYPE(TPREL_LO12_S): {
+    uint64_t tprel = symvalue + rela->r_addend;
+    uint64_t hi = (tprel + 0x800) >> 12;
+    uint64_t lo = tprel - (hi << 12);
+    uint32_t imm11_5 = extractBits(lo, 11, 5) << 25;
+    uint32_t imm4_0 = extractBits(lo, 4, 0) << 7;
+    write32le(where, (read32le(where) & 0x1FFF07F) | imm11_5 | imm4_0);
+
+    if (rtems_rtl_trace(RTEMS_RTL_TRACE_RELOC)) {
+      printf("rtl: R_RISCV_TPREL_LO12_S %p @ %p in %s\n", (void*)*(where),
+             where, rtems_rtl_obj_oname(obj));
+    }
+  } break;
+
+  case R_TYPE(TPREL_ADD):
+    /*
+     * A marker for linker relaxation of the tp-relative add. Nothing
+     * to patch.
+     */
+    break;
+
+  case R_TYPESZ(TLS_TPREL): {
+    /*
+     * TLS initial-exec: a GOT style word holding the thread pointer
+     * relative offset of the symbol.
+     */
+    *where = symvalue + rela->r_addend;
+
+    if (rtems_rtl_trace(RTEMS_RTL_TRACE_RELOC)) {
+      printf("rtl: R_RISCV_TLS_TPREL %p @ %p in %s\n", (void*)*(where), where,
+             rtems_rtl_obj_oname(obj));
+    }
+  } break;
+
   case R_TYPE(CALL_PLT):
   case R_TYPE(CALL): {
     int64_t hi = SignExtend64(pcrel_val + 0x800, bits);
