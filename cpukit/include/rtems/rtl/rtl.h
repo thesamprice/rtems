@@ -85,8 +85,17 @@ extern "C" {
 
 /**
  * The number of buckets in the global symbol table.
+ *
+ * A base image typically exports thousands of symbols (rtems-syms) and
+ * every loader relocation that references a global symbol walks a
+ * bucket chain doing a strcmp per candidate, so the table must be
+ * sized for thousands of entries. With 32 buckets and ~4k symbols a
+ * lookup averaged ~61 strcmps (~122 for a miss); benchmarked on a
+ * pc686 cFS system this made symbol lookup 31-46% of all module-load
+ * work, and raising the bucket count to a prime near 1k cut total
+ * load instructions by 26-35%. Costs ~12KiB more RAM for chain heads.
  */
-#define RTEMS_RTL_SYMS_GLOBAL_BUCKETS (32)
+#define RTEMS_RTL_SYMS_GLOBAL_BUCKETS (1021)
 
 /**
  * The number of relocation record per block in the unresolved table.
