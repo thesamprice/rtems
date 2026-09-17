@@ -18,12 +18,14 @@ links: []
 source:
 - bsps/riscv/esp32/console/console-config.c
 - bsps/riscv/esp32/clock/clockdrv_systimer.c
+- bsps/riscv/esp32/gpio/gpio_c3.c
 - bsps/riscv/esp32/irq/irq_c3.c
 - bsps/riscv/esp32/start/bspstart.c
 - bsps/shared/atomics/__atomic_test_and_set.c
 - bsps/shared/cache/nocache.c
 - bsps/shared/dev/btimer/btimer-cpucounter.c
 - bsps/shared/dev/getentropy/getentropy-cpucounter.c
+- bsps/shared/dev/gpio/gpio-support.c
 - bsps/shared/dev/serial/console-polled.c
 - bsps/shared/irq/irq-default-handler.c
 - bsps/shared/start/bspfatal-default.c
