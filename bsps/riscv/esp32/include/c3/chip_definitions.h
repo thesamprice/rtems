@@ -101,6 +101,7 @@
 #define RISCV_INTERRUPT_VECTOR_TIMER    SYSTIMER_TARGET0_INTR
 
 #define GPIO_BASE            ( (uintptr_t) 0x60004000U )
+#define I2C_BASE             ( (uintptr_t) 0x60013000U )
 #define IO_MUX_BASE          ( (uintptr_t) 0x60009000U )
 #define SYSTIMER_BASE        ( (uintptr_t) 0x60023000U )
 #define USB_SERIAL_JTAG_BASE ( (uintptr_t) 0x60043000U )
