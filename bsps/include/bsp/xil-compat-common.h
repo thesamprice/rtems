@@ -79,11 +79,29 @@ static inline void Xil_Out32(uintptr_t addr, uint32_t value)
 }
 
 #include <rtems/rtems/cache.h>
+/*
+ * do { } while (0), so these behave as one statement.
+ *
+ * Xil_DCacheInvalidateRange() expands to two, and without the wrapper
+ *
+ *   if (cfg.IsCacheCoherent == 0)
+ *     Xil_DCacheInvalidateRange(p, n);
+ *
+ * invalidates unconditionally, while putting an else after it does not compile
+ * at all -- "error: 'else' without a previous 'if'".  Every caller in the tree
+ * happens to brace its if bodies, so neither has bitten; the next one is as
+ * likely not to, and an unconditional invalidate of a DMA buffer presents as
+ * rare data corruption rather than as a failure.
+ */
 #define Xil_DCacheInvalidateRange(addr, len) \
-  rtems_cache_flush_multiple_data_lines((void*)addr, len); \
-  rtems_cache_invalidate_multiple_data_lines((void*)addr, len)
+  do { \
+    rtems_cache_flush_multiple_data_lines((void*)addr, len); \
+    rtems_cache_invalidate_multiple_data_lines((void*)addr, len); \
+  } while (0)
 #define Xil_DCacheFlushRange(addr, len) \
-  rtems_cache_flush_multiple_data_lines((void*)addr, len)
+  do { \
+    rtems_cache_flush_multiple_data_lines((void*)addr, len); \
+  } while (0)
 
 #include <unistd.h>
 #include <bspopts.h>
