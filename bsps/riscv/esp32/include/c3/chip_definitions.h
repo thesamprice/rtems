@@ -102,6 +102,8 @@
 
 #define GPIO_BASE            ( (uintptr_t) 0x60004000U )
 #define I2C_BASE             ( (uintptr_t) 0x60013000U )
+#define UART0_BASE           ( (uintptr_t) 0x60000000U )
+#define UART1_BASE           ( (uintptr_t) 0x60010000U )
 #define IO_MUX_BASE          ( (uintptr_t) 0x60009000U )
 #define SYSTIMER_BASE        ( (uintptr_t) 0x60023000U )
 #define USB_SERIAL_JTAG_BASE ( (uintptr_t) 0x60043000U )
