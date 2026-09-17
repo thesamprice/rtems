@@ -1,0 +1,31 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-integer: null
+- assert-uint32: null
+- env-assign: null
+- format-and-define: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price <thesamprice@gmail.com>
+default:
+- enabled-by: true
+  value: 0x0
+description: |
+  How much of the internal SRAM to reserve for code that executes from RAM
+  rather than from flash, in bytes, aligned to 4.
+
+  The ESP32-C3 reaches one SRAM through two windows: 0x3fc80000 on the data
+  bus and 0x40380000 on the instruction bus.  A byte reached through one is
+  the same byte reached through the other, so memory given to this region is
+  taken from the data region and from the heap with it -- which is why the
+  default is zero.  A configuration that needs none pays nothing.
+
+  Raise it for something that must not execute from flash.  A SPI flash
+  driver must not, because it cannot erase the flash it is fetching
+  instructions from; the Espressif WiFi libraries must not, and want about
+  40 KiB of it.
+enabled-by: true
+format: '{:#010x}'
+links: []
+name: ESP32C_IRAM_REGION_SIZE
+type: build

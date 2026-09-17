@@ -10,14 +10,42 @@ content: |
     CODE_FLASH_RAW : ORIGIN = 0x0, LENGTH = ${ESP32C_CODE_REGION_SIZE}
     DATA_FLASH_MAPPED : ORIGIN = 0x3c000000 + ${ESP32C_CODE_REGION_SIZE}, LENGTH = ${ESP32C_FLASH_SIZE} - ${ESP32C_CODE_REGION_SIZE}
     DATA_FLASH_RAW : ORIGIN = 0x0 + ${ESP32C_CODE_REGION_SIZE}, LENGTH = ${ESP32C_FLASH_SIZE} - ${ESP32C_CODE_REGION_SIZE}
-    RAM : ORIGIN = 0x3fc80000, LENGTH = 0x50000
+    /*
+     * One SRAM, two windows.  The part reaches the same bytes at 0x3fc80000
+     * on the data bus and at 0x40380000 on the instruction bus, so a byte
+     * given to RAM_CODE is a byte taken from RAM -- the two regions are carved
+     * out of one block rather than being separate memories, and they must not
+     * overlap or the linker will hand the same storage out twice.
+     *
+     * RAM_CODE holds code that must not execute from flash.  With
+     * ESP32C_IRAM_REGION_SIZE at its default of zero the region is empty and
+     * RAM is the whole SRAM, which is what a configuration that needs none
+     * should pay.
+     */
+    RAM_CODE : ORIGIN = 0x40380000, LENGTH = ${ESP32C_IRAM_REGION_SIZE}
+    RAM : ORIGIN = 0x3fc80000 + ${ESP32C_IRAM_REGION_SIZE}, LENGTH = 0x50000 - ${ESP32C_IRAM_REGION_SIZE}
   }
+
+  /*
+   * Where the same bytes appear on the data bus, so that the boot copy can
+   * write .fast_text through the window the silicon guarantees for stores.
+   * bsp_start_copy_sections() uses it; see bspstart.c.
+   */
+  esp32c_iram_to_dram_delta = 0x3fc80000 - 0x40380000;
 
   REGION_ALIAS ("REGION_START", CODE_FLASH_MAPPED);
   REGION_ALIAS ("REGION_START_LOAD", CODE_FLASH_RAW);
   REGION_ALIAS ("REGION_TEXT", CODE_FLASH_MAPPED);
   REGION_ALIAS ("REGION_TEXT_LOAD", CODE_FLASH_RAW);
-  REGION_ALIAS ("REGION_FAST_TEXT", CODE_FLASH_MAPPED);
+  /*
+   * Not CODE_FLASH_MAPPED.  The whole purpose of .fast_text is code that is
+   * not in flash -- a flash driver cannot erase the flash it is fetching from
+   * -- and pointing it at flash made the section useless while looking
+   * configured.  With the region empty by default, an application that puts
+   * nothing there still links; one that does gets a link error saying
+   * RAM_CODE overflowed, which names the option to raise.
+   */
+  REGION_ALIAS ("REGION_FAST_TEXT", RAM_CODE);
   REGION_ALIAS ("REGION_FAST_TEXT_LOAD", CODE_FLASH_RAW);
   REGION_ALIAS ("REGION_RODATA", DATA_FLASH_MAPPED);
   REGION_ALIAS ("REGION_RODATA_LOAD", DATA_FLASH_RAW);

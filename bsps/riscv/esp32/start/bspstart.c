@@ -27,6 +27,8 @@
 #include <bsp/fatal.h>
 #include <bsp/irq-generic.h>
 #include <bsp/linker-symbols.h>
+
+#include <stdint.h>
 #include <bsp/start.h>
 #include <bsp/utility.h>
 
@@ -91,6 +93,13 @@ void bsp_start( void )
 }
 
 /* src is the offset in flash */
+/*
+ * The distance from the instruction window to the data window onto the same
+ * SRAM, defined in the BSP's linker script.  A LINKER_SYMBOL rather than a
+ * constant here so that changing the memory map changes one place.
+ */
+LINKER_SYMBOL( esp32c_iram_to_dram_delta );
+
 BSP_START_TEXT_SECTION static inline void copy_from_flash_offset(
   void       *dest,
   const void *src,
@@ -113,8 +122,17 @@ BSP_START_TEXT_SECTION void bsp_start_copy_sections( void )
     (size_t) bsp_section_data_size
   );
 
+  /*
+   * .fast_text is linked in the instruction window so that calls into it
+   * resolve to 0x4038xxxx, but it is *written* through the data window.  The
+   * two address the same SRAM; stores through the data bus are the access the
+   * part guarantees, and are how ESP-IDF loads its own IRAM.
+   *
+   * esp32c_iram_to_dram_delta comes from the linker script, so the two places
+   * that know the window layout cannot drift apart.
+   */
   copy_from_flash_offset(
-    bsp_section_fast_text_begin,
+    (char *) bsp_section_fast_text_begin + (intptr_t) esp32c_iram_to_dram_delta,
     bsp_section_fast_text_load_begin,
     (size_t) bsp_section_fast_text_size
   );
