@@ -21,9 +21,16 @@ content: |
      * ESP32C_IRAM_REGION_SIZE at its default of zero the region is empty and
      * RAM is the whole SRAM, which is what a configuration that needs none
      * should pay.
+     *
+     * The top of the block is not ours either.  The ROM keeps its own data
+     * there, from 0x3fcce710 up, and this BSP calls ROM code continuously --
+     * ets_*, the PHY routines, and the WiFi libraries' ROM halves.  So
+     * ESP32C_DRAM_ROM_RESERVE_SIZE comes off the top for the same reason
+     * ESP32C_IRAM_REGION_SIZE comes off the bottom: it is memory that
+     * exists and is spoken for.
      */
     RAM_CODE : ORIGIN = 0x40380000, LENGTH = ${ESP32C_IRAM_REGION_SIZE}
-    RAM : ORIGIN = 0x3fc80000 + ${ESP32C_IRAM_REGION_SIZE}, LENGTH = 0x50000 - ${ESP32C_IRAM_REGION_SIZE}
+    RAM : ORIGIN = 0x3fc80000 + ${ESP32C_IRAM_REGION_SIZE}, LENGTH = 0x50000 - ${ESP32C_IRAM_REGION_SIZE} - ${ESP32C_DRAM_ROM_RESERVE_SIZE}
   }
 
   /*
@@ -32,6 +39,15 @@ content: |
    * bsp_start_copy_sections() uses it; see bspstart.c.
    */
   esp32c_iram_to_dram_delta = 0x3fc80000 - 0x40380000;
+
+  /*
+   * The first address above the region, which is the first address the ROM
+   * owns.  Exported so that a program checking the boundary reads it from the
+   * image it is actually running rather than from a copy of the constant, and
+   * so that a weak reference can tell a BSP that reserves nothing from one
+   * that reserves a different amount.  A literal can do neither.
+   */
+  esp32c_dram_rom_reserve_begin = 0x3fc80000 + 0x50000 - ${ESP32C_DRAM_ROM_RESERVE_SIZE};
 
   REGION_ALIAS ("REGION_START", CODE_FLASH_MAPPED);
   REGION_ALIAS ("REGION_START_LOAD", CODE_FLASH_RAW);
