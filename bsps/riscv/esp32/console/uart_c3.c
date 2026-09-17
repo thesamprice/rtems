@@ -53,9 +53,11 @@
 
 #include <bsp.h>
 #include <bsp/irq.h>
+#include <bsp/pin.h>
 #include <bsp/uart.h>
 
 #include <rtems/termiostypes.h>
+#include <rtems/bspIo.h>
 
 #define UART_REG( ctx, off ) \
   ( *( (volatile uint32_t *) ( (ctx)->regs + (off) ) ) )
@@ -210,13 +212,36 @@ static void esp32c3_uart_pad_to_gpio_function( uint32_t pin, bool input )
   *mux = value;
 }
 
-static void esp32c3_uart_route_pins( unsigned port )
+static const char esp32c3_uart_owner[] = "esp32c3 uart1";
+
+static bool esp32c3_uart_route_pins( unsigned port )
 {
   /* UART0 is already on its IO_MUX default pads, put there by the boot ROM
    * before any of this runs -- which is how the console works.  Rerouting it
-   * would cut the console off mid-line. */
+   * would cut the console off mid-line.  It is not claimed either: the ROM
+   * took those pads before this table existed, and a claim that no code can
+   * fail against would only be decoration. */
   if ( port != 1 ) {
-    return;
+    return true;
+  }
+
+  if ( !bsp_pin_claim( UART1_TX_PIN, esp32c3_uart_owner ) ) {
+    printk(
+      "esp32c3 uart1: GPIO%u belongs to %s\n",
+      UART1_TX_PIN,
+      bsp_pin_owner( UART1_TX_PIN )
+    );
+    return false;
+  }
+
+  if ( !bsp_pin_claim( UART1_RX_PIN, esp32c3_uart_owner ) ) {
+    printk(
+      "esp32c3 uart1: GPIO%u belongs to %s\n",
+      UART1_RX_PIN,
+      bsp_pin_owner( UART1_RX_PIN )
+    );
+    bsp_pin_release( UART1_TX_PIN );
+    return false;
   }
 
   esp32c3_uart_pad_to_gpio_function( UART1_TX_PIN, false );
@@ -226,6 +251,8 @@ static void esp32c3_uart_route_pins( unsigned port )
   esp32c3_uart_pad_to_gpio_function( UART1_RX_PIN, true );
   *(volatile uint32_t *) GPIO_FUNC_IN_SEL_REG( UART1_SIG_RX ) =
     UART1_RX_PIN | GPIO_FUNC_IN_SEL_ENA;
+
+  return true;
 }
 
 static bool esp32c3_uart_set_baud( esp32c3_uart_context *ctx, uint32_t baud )
@@ -498,7 +525,9 @@ rtems_status_code esp32c3_uart_register(
    * the ROM routines, and resetting its FIFOs or reprogramming its divider
    * from here would cut off printk() mid-line. */
   if ( port != 0 ) {
-    esp32c3_uart_route_pins( port );
+    if ( !esp32c3_uart_route_pins( port ) ) {
+      return RTEMS_RESOURCE_IN_USE;
+    }
 
     UART_REG( ctx, UART_INT_ENA ) = 0;
     UART_REG( ctx, UART_INT_CLR ) = 0xffffffffU;
