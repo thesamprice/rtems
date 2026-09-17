@@ -188,6 +188,17 @@ typedef struct {
 
 static const char esp32c3_i2c_owner[] = "esp32c3 i2c";
 
+/*
+ * Whether the one controller this part has is already registered.
+ *
+ * The pin claim cannot answer this: a re-claim by the same owner succeeds by
+ * design, so a driver configuring a pad in several steps need not track
+ * whether it has claimed yet, and a second registration of this driver is
+ * indistinguishable from that.  Registering at a second path would otherwise
+ * succeed and reconfigure the controller underneath the first bus.
+ */
+static bool esp32c3_i2c_registered;
+
 static bool esp32c3_i2c_route_pin( uint32_t pin, uint32_t signal )
 {
   volatile uint32_t *mux = (volatile uint32_t *) IO_MUX_PIN_REG( pin );
@@ -493,6 +504,8 @@ static int esp32c3_i2c_set_clock( i2c_bus *bus, unsigned long clock )
 
 static void esp32c3_i2c_destroy( i2c_bus *bus )
 {
+  esp32c3_i2c_registered = false;
+
   I2C_REG( I2C_CTR ) = 0;
 
   /* Give the pads back, otherwise registering a bus again after a destroy
@@ -507,6 +520,11 @@ rtems_status_code esp32c3_i2c_register( const char *bus_path )
 {
   esp32c3_i2c_bus *self;
   int rv;
+
+  if ( esp32c3_i2c_registered ) {
+    printk( "esp32c3 i2c: the controller is already registered\n" );
+    return RTEMS_RESOURCE_IN_USE;
+  }
 
   self = (esp32c3_i2c_bus *) i2c_bus_alloc_and_init( sizeof( *self ) );
 
@@ -549,6 +567,8 @@ rtems_status_code esp32c3_i2c_register( const char *bus_path )
   if ( rv != 0 ) {
     return RTEMS_UNSATISFIED;
   }
+
+  esp32c3_i2c_registered = true;
 
   return RTEMS_SUCCESSFUL;
 }

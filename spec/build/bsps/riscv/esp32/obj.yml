@@ -15,6 +15,7 @@ install:
   source:
   - bsps/riscv/esp32/include/bsp/i2c.h
   - bsps/riscv/esp32/include/bsp/pin.h
+  - bsps/riscv/esp32/include/bsp/spi.h
   - bsps/riscv/esp32/include/bsp/uart.h
   - bsps/riscv/esp32/include/bsp/irq.h
 links: []
@@ -25,6 +26,7 @@ source:
 - bsps/riscv/esp32/gpio/gpio_c3.c
 - bsps/riscv/esp32/i2c/i2c_c3.c
 - bsps/riscv/esp32/pin/pin.c
+- bsps/riscv/esp32/spi/spi_c3.c
 - bsps/riscv/esp32/irq/irq_c3.c
 - bsps/riscv/esp32/start/bspstart.c
 - bsps/shared/atomics/__atomic_test_and_set.c
