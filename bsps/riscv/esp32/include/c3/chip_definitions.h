@@ -54,6 +54,21 @@
 
 #define BSP_INTERRUPT_CUSTOM_VALID_VECTOR
 
+/*
+ * The WiFi sources, which are the first four peripheral interrupts on this
+ * part.  soc/interrupts.h in ESP-IDF calls the table they come from "decided
+ * by hardware, don't touch this"; these are ETS_WIFI_MAC_INTR_SOURCE and its
+ * three neighbours.
+ *
+ * WIFI_MAC_INTR being zero is the whole reason the dispatcher below has a
+ * sentinel other than zero: a peripheral source of 0 is legitimate here, even
+ * though a CPU interrupt channel of 0 is not.
+ */
+#define WIFI_MAC_INTR          0
+#define WIFI_MAC_NMI_INTR      1
+#define WIFI_PWR_INTR          2
+#define WIFI_BB_INTR           3
+
 #define UHCI0_INTR            15
 #define GPIO_PROCPU_INTR      16
 #define GPSPI2_INTR_2         19
