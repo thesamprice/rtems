@@ -57,10 +57,14 @@
 
 #include <bsp.h>
 #include <bsp/i2c.h>
+#include <bsp/pin.h>
 #include <bsp/irq.h>
 
 #include <dev/i2c/i2c.h>
 #include <rtems/counter.h>
+#include <rtems/bspIo.h>
+
+#include <inttypes.h>
 
 #include <errno.h>
 #include <stdlib.h>
@@ -182,10 +186,25 @@ typedef struct {
   unsigned long clock;
 } esp32c3_i2c_bus;
 
-static void esp32c3_i2c_route_pin( uint32_t pin, uint32_t signal )
+static const char esp32c3_i2c_owner[] = "esp32c3 i2c";
+
+static bool esp32c3_i2c_route_pin( uint32_t pin, uint32_t signal )
 {
   volatile uint32_t *mux = (volatile uint32_t *) IO_MUX_PIN_REG( pin );
-  uint32_t value = *mux;
+  uint32_t value;
+
+  /* Claim before touching IO_MUX, not after: a pad another driver owns must
+   * be left exactly as that driver configured it. */
+  if ( !bsp_pin_claim( pin, esp32c3_i2c_owner ) ) {
+    printk(
+      "esp32c3 i2c: GPIO%" PRIu32 " belongs to %s\n",
+      pin,
+      bsp_pin_owner( pin )
+    );
+    return false;
+  }
+
+  value = *mux;
 
   value &= ~IO_MUX_MCU_SEL_MASK;
   value |= (uint32_t) IO_MUX_FUNC_GPIO << IO_MUX_MCU_SEL_SHIFT;
@@ -208,6 +227,8 @@ static void esp32c3_i2c_route_pin( uint32_t pin, uint32_t signal )
   *(volatile uint32_t *) GPIO_FUNC_OUT_SEL_REG( pin ) = signal;
   *(volatile uint32_t *) GPIO_FUNC_IN_SEL_REG( signal ) =
     pin | GPIO_FUNC_IN_SEL_ENA;
+
+  return true;
 }
 
 static void esp32c3_i2c_command( unsigned index, uint32_t command )
@@ -473,6 +494,12 @@ static int esp32c3_i2c_set_clock( i2c_bus *bus, unsigned long clock )
 static void esp32c3_i2c_destroy( i2c_bus *bus )
 {
   I2C_REG( I2C_CTR ) = 0;
+
+  /* Give the pads back, otherwise registering a bus again after a destroy
+   * is refused by the claim this driver itself left behind. */
+  bsp_pin_release( I2C_SCL_PIN );
+  bsp_pin_release( I2C_SDA_PIN );
+
   i2c_bus_destroy_and_free( bus );
 }
 
@@ -487,8 +514,16 @@ rtems_status_code esp32c3_i2c_register( const char *bus_path )
     return RTEMS_NO_MEMORY;
   }
 
-  esp32c3_i2c_route_pin( I2C_SCL_PIN, I2C_SIG_SCL );
-  esp32c3_i2c_route_pin( I2C_SDA_PIN, I2C_SIG_SDA );
+  if ( !esp32c3_i2c_route_pin( I2C_SCL_PIN, I2C_SIG_SCL ) ) {
+    i2c_bus_destroy_and_free( &self->base );
+    return RTEMS_RESOURCE_IN_USE;
+  }
+
+  if ( !esp32c3_i2c_route_pin( I2C_SDA_PIN, I2C_SIG_SDA ) ) {
+    bsp_pin_release( I2C_SCL_PIN );
+    i2c_bus_destroy_and_free( &self->base );
+    return RTEMS_RESOURCE_IN_USE;
+  }
 
   I2C_REG( I2C_CTR ) = I2C_CTR_MS_MODE | I2C_CTR_CLK_EN
     | I2C_CTR_SDA_FORCE_OUT | I2C_CTR_SCL_FORCE_OUT;

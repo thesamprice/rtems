@@ -46,6 +46,11 @@
 #include <bsp.h>
 #include <bsp/gpio.h>
 #include <bsp/irq.h>
+#include <bsp/pin.h>
+
+#include <rtems/bspIo.h>
+
+#include <inttypes.h>
 
 #define GPIO_REG( off ) \
   ( *( (volatile uint32_t *) ( GPIO_BASE + (off) ) ) )
@@ -91,9 +96,35 @@
 #define IO_MUX_FUNC_GPIO  1
 #define SIG_GPIO_OUT_IDX  128
 
-static void esp32c3_gpio_select_gpio_function( uint32_t pin )
+static const char esp32c3_gpio_owner[] = "esp32c3 gpio";
+
+static bool esp32c3_gpio_select_gpio_function( uint32_t pin )
 {
-  uint32_t mux = IO_MUX_REG( IO_MUX_PIN( pin ) );
+  uint32_t mux;
+
+  /* The shared layer's rtems_gpio_request_pin() already stops two GPIO users
+   * colliding.  What it cannot see is a pad taken by I2C or UART1, which
+   * never go through it -- so the claim is taken here as well, and this is
+   * the only place that catches a cross-driver collision.
+   *
+   * It is never given back.  rtems_gpio_release_pin() does its bookkeeping
+   * in the shared layer and there is no rtems_gpio_bsp_release() for it to
+   * call, so a pad the GPIO driver has configured stays claimed for the life
+   * of the application.  Re-requesting it as GPIO still works, because a
+   * re-claim by the same owner succeeds; what is refused is I2C or UART1
+   * taking a pad that GPIO used earlier and has since released.  That is a
+   * false refusal, and it is the safe direction to be wrong in -- the other
+   * way round is the silent collision this exists to stop. */
+  if ( !bsp_pin_claim( pin, esp32c3_gpio_owner ) ) {
+    printk(
+      "esp32c3 gpio: GPIO%" PRIu32 " belongs to %s\n",
+      pin,
+      bsp_pin_owner( pin )
+    );
+    return false;
+  }
+
+  mux = IO_MUX_REG( IO_MUX_PIN( pin ) );
 
   mux &= ~IO_MUX_MCU_SEL_MASK;
   mux |= (uint32_t) IO_MUX_FUNC_GPIO << IO_MUX_MCU_SEL_SHIFT;
@@ -105,6 +136,8 @@ static void esp32c3_gpio_select_gpio_function( uint32_t pin )
 
   IO_MUX_REG( IO_MUX_PIN( pin ) ) = mux;
   GPIO_REG( GPIO_FUNC_OUT_SEL_CFG( pin ) ) = SIG_GPIO_OUT_IDX;
+
+  return true;
 }
 
 rtems_status_code rtems_gpio_bsp_multi_set(
@@ -179,7 +212,10 @@ rtems_status_code rtems_gpio_bsp_select_input(
   RTEMS_UNUSED void *bsp_specific
 )
 {
-  esp32c3_gpio_select_gpio_function( pin );
+  if ( !esp32c3_gpio_select_gpio_function( pin ) ) {
+    return RTEMS_RESOURCE_IN_USE;
+  }
+
   GPIO_REG( GPIO_ENABLE_W1TC ) = 1U << pin;
 
   return RTEMS_SUCCESSFUL;
@@ -191,7 +227,10 @@ rtems_status_code rtems_gpio_bsp_select_output(
   RTEMS_UNUSED void *bsp_specific
 )
 {
-  esp32c3_gpio_select_gpio_function( pin );
+  if ( !esp32c3_gpio_select_gpio_function( pin ) ) {
+    return RTEMS_RESOURCE_IN_USE;
+  }
+
   GPIO_REG( GPIO_ENABLE_W1TS ) = 1U << pin;
 
   return RTEMS_SUCCESSFUL;
