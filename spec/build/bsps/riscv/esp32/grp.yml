@@ -39,6 +39,8 @@ links:
 - role: build-dependency
   uid: optiramsize
 - role: build-dependency
+  uid: optdramromreserve
+- role: build-dependency
   uid: optflashsize
 - role: build-dependency
   uid: linkcmds

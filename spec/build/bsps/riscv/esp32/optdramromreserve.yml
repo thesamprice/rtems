@@ -1,0 +1,44 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-integer: null
+- assert-uint32: null
+- env-assign: null
+- format-and-define: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price <thesamprice@gmail.com>
+default:
+- enabled-by: true
+  value: 0x0
+description: |
+  How many bytes at the top of the internal SRAM belong to the ROM rather than
+  to the application, in bytes, aligned to 4.
+
+  The correct value on this part is 0x18f0, and the default here is 0 anyway.
+  Read that as a debt, not as a judgement that the memory is free: the reserve
+  costs 6384 bytes of work area, and measured on hardware that is enough to
+  stop the MicroPython WiFi example associating -- it leaves 6880 bytes of C
+  heap where 14416 works, and the WiFi libraries then fail the way they fail
+  at 2128, which is an empty scan rather than an allocation error.  So this
+  ships switched off until lwIP stops holding 71.5 KiB in static pools, and
+  is set to 0x18f0 in the same change that frees it.
+
+  The ESP32-C3's ROM keeps its own data in the SRAM, from 0x3fcce710 to the
+  end of the block at 0x3fcd0000.  That is where ESP-IDF stops: esp_system's
+  memory.ld computes dram0_0_seg's length from the same address, and the
+  0x18f0 default here is 0x3fcd0000 - 0x3fcce710.
+
+  A BSP that ends its data region at 0x3fcd0000 instead does not gain 6384
+  bytes; it hands out 6384 bytes the ROM believes it owns, to whatever the
+  allocator places last.  Every image built for this part calls ROM code --
+  the ets_* entry points, the PHY routines, and the ROM halves of the WiFi
+  libraries -- so the overlap is not conditional on using a particular driver.
+
+  Lower it only for an image that calls no ROM code at all, and know that the
+  PHY and WiFi blobs do so from their own ROM address literals, not through
+  anything the link can be made to show.
+enabled-by: true
+format: '{:#010x}'
+links: []
+name: ESP32C_DRAM_ROM_RESERVE_SIZE
+type: build
