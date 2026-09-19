@@ -69,6 +69,25 @@ static peripheral_irq_map_t irq_mappings[] = {
   { .peripheral_int = WIFI_PWR_INTR, .cpu_int = 1 },
   { .peripheral_int = WIFI_BB_INTR, .cpu_int = 1 },
   { .peripheral_int = UHCI0_INTR, .cpu_int = 1 },
+  /*
+   * Bluetooth.  The link layer sources get a channel of their own and the
+   * baseband and MAC share a second, rather than all of them joining WiFi on
+   * channel 1.  RWBT and RWBLE are the pair a controller services to meet a
+   * connection event, so putting them behind the software interrupts would add
+   * a scan of the status word to the one path where latency is the point.
+   *
+   * Channels 6 and 22 come from UART1 and GDMA_CH2, which now share with UART0
+   * and GDMA_CH1.  All 31 usable channels were assigned before Bluetooth
+   * existed here, so a new source has to come from somewhere; grouping is what
+   * this table already does in four other places.
+   */
+  { .peripheral_int = RWBT_INTR, .cpu_int = 6 },
+  { .peripheral_int = RWBLE_INTR, .cpu_int = 6 },
+  { .peripheral_int = RWBT_NMI_INTR, .cpu_int = 6 },
+  { .peripheral_int = RWBLE_NMI_INTR, .cpu_int = 6 },
+  { .peripheral_int = BT_MAC_INTR, .cpu_int = 22 },
+  { .peripheral_int = BT_BB_INTR, .cpu_int = 22 },
+  { .peripheral_int = BT_BB_NMI_INTR, .cpu_int = 22 },
   /* Group software interrupts on interrupt 1 */
   { .peripheral_int = SW_INTR_0, .cpu_int = 1 },
   { .peripheral_int = SW_INTR_1, .cpu_int = 1 },
