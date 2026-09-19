@@ -384,7 +384,11 @@ static int rtems_gpio_ioctl(
        * whether a pin is free wants.
        */
       if ( ( info.flags & RTEMS_GPIO_PIN_IN_USE ) != 0 ) {
-        err = ( *ctrl->handlers->pin_get_config )( ctrl, pc->pin, &pc->config );
+        err = ( *ctrl->handlers->pin_get_config )(
+          ctrl,
+          pc->pin,
+          &pc->config
+        );
       }
       break;
     }
