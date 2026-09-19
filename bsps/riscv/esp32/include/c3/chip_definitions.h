@@ -69,6 +69,27 @@
 #define WIFI_PWR_INTR          2
 #define WIFI_BB_INTR           3
 
+/*
+ * The Bluetooth sources, from the same hardware table.  BT_MAC_INTR is marked
+ * "will be cancelled" in soc/interrupts.h and its reset bit, SYSTEM_BTMAC_RST,
+ * is marked deprecated; it is named here because the table is positional and a
+ * hole would misnumber everything after it.
+ *
+ * RWBT and RWBLE are the link layer.  The Bluetooth MAC on this part is a
+ * Riviera Waves core and those two are the interrupts its firmware takes: RWBT
+ * for the common part, RWBLE for the low energy part.  The NMI variants exist
+ * so a hardware erratum can be handled at a priority software cannot mask.
+ * RISC-V on this BSP has no NMI path, so they are routed like any other source
+ * and an application installing on one gets an ordinary interrupt.
+ */
+#define BT_MAC_INTR            4
+#define BT_BB_INTR             5
+#define BT_BB_NMI_INTR         6
+#define RWBT_INTR              7
+#define RWBLE_INTR             8
+#define RWBT_NMI_INTR          9
+#define RWBLE_NMI_INTR        10
+
 #define UHCI0_INTR            15
 #define GPIO_PROCPU_INTR      16
 #define GPSPI2_INTR_2         19
@@ -126,6 +147,7 @@
 #define TIMG_BASE            ( (uintptr_t) 0x6001F000U )
 #define INT_MATRIX_BASE      ( (uintptr_t) 0x600c2000U )
 #define SYSREG_BASE          ( (uintptr_t) 0x600c0000U )
+#define SYSCON_BASE          ( (uintptr_t) 0x60026000U )
 
 /* ESP32-C3 ROM function addresses */
 #define UART_TX_ONE_CHAR_ADDR ( (void *) (uintptr_t) 0x40000068 )
