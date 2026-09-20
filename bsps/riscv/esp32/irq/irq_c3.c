@@ -47,7 +47,47 @@ typedef struct peripheral_irq_map {
 } peripheral_irq_map_t;
 
 static peripheral_irq_map_t irq_mappings[] = {
+  /*
+   * WiFi, grouped onto channel 1 with the software interrupts.
+   *
+   * All 31 usable CPU channels were already assigned, and giving WiFi one of
+   * its own would mean taking it from a peripheral another application uses.
+   * Grouping is this table's established idiom -- four software interrupts
+   * already share channel 1, EFUSE shares 7 with LEDC, both watchdogs share 14
+   * -- and _RISCV_Interrupt_dispatch() resolves which source actually fired.
+   *
+   * Channel 1 is also what the WiFi libraries themselves ask for: they call
+   * the OS adapter's _set_intr with intr_num 1 for both the MAC and PWR
+   * sources.
+   *
+   * The cost is that a WiFi interrupt shares a priority with the software
+   * interrupts, and that dispatch scans the status word to identify the
+   * source.  Worth revisiting if WiFi receive latency ever matters; a dynamic
+   * mapping rather than this static table would be the real answer.
+   */
+  { .peripheral_int = WIFI_MAC_INTR, .cpu_int = 1 },
+  { .peripheral_int = WIFI_PWR_INTR, .cpu_int = 1 },
+  { .peripheral_int = WIFI_BB_INTR, .cpu_int = 1 },
   { .peripheral_int = UHCI0_INTR, .cpu_int = 1 },
+  /*
+   * Bluetooth.  The link layer sources get a channel of their own and the
+   * baseband and MAC share a second, rather than all of them joining WiFi on
+   * channel 1.  RWBT and RWBLE are the pair a controller services to meet a
+   * connection event, so putting them behind the software interrupts would add
+   * a scan of the status word to the one path where latency is the point.
+   *
+   * Channels 6 and 22 come from UART1 and GDMA_CH2, which now share with UART0
+   * and GDMA_CH1.  All 31 usable channels were assigned before Bluetooth
+   * existed here, so a new source has to come from somewhere; grouping is what
+   * this table already does in four other places.
+   */
+  { .peripheral_int = RWBT_INTR, .cpu_int = 6 },
+  { .peripheral_int = RWBLE_INTR, .cpu_int = 6 },
+  { .peripheral_int = RWBT_NMI_INTR, .cpu_int = 6 },
+  { .peripheral_int = RWBLE_NMI_INTR, .cpu_int = 6 },
+  { .peripheral_int = BT_MAC_INTR, .cpu_int = 22 },
+  { .peripheral_int = BT_BB_INTR, .cpu_int = 22 },
+  { .peripheral_int = BT_BB_NMI_INTR, .cpu_int = 22 },
   /* Group software interrupts on interrupt 1 */
   { .peripheral_int = SW_INTR_0, .cpu_int = 1 },
   { .peripheral_int = SW_INTR_1, .cpu_int = 1 },
@@ -110,6 +150,19 @@ static peripheral_irq_map_t irq_mappings[] = {
 
 #define MATRIX_REG( reg ) *( (volatile uint32_t *) ( INT_MATRIX_BASE + reg ) )
 
+/*
+ * Returned by get_active_interrupt() when no mapped source is asserting.
+ *
+ * It cannot be 0.  ETS_WIFI_MAC_INTR_SOURCE is peripheral source 0 on this
+ * part, so 0 is a legitimate vector here and using it as "none" makes the
+ * WiFi MAC interrupt indistinguishable from no interrupt at all -- which is
+ * exactly what it did, and why the radio could never receive.
+ *
+ * RISCV_MAXIMUM_EXTERNAL_INTERRUPTS is one past the last valid vector, so it
+ * can never collide with a real one.
+ */
+#define NO_ACTIVE_VECTOR ( (rtems_vector_number) RISCV_MAXIMUM_EXTERNAL_INTERRUPTS )
+
 static uint64_t get_int_status( void )
 {
   uint64_t total_set = MATRIX_REG( INTERRUPT_CORE0_INTR_STATUS_1_REG );
@@ -144,7 +197,7 @@ static rtems_vector_number get_active_interrupt( uint8_t cpu_vector )
     total_set >>= 1;
   }
 
-  return 0;
+  return NO_ACTIVE_VECTOR;
 }
 
 static uintptr_t periph_int_to_map_reg( rtems_vector_number vector )
@@ -172,6 +225,16 @@ void _RISCV_Interrupt_dispatch( uintptr_t mcause, Per_CPU_Control *cpu_self )
   /* Check this CPU vector to see which peripheral has an active interrupt */
   active = get_active_interrupt( cpu_vector );
 
+  /*
+   * A spurious interrupt on this channel, or one whose source has been
+   * unmapped between asserting and being dispatched.  Returning is the only
+   * safe response: dispatching NO_ACTIVE_VECTOR would index off the end of the
+   * handler table.
+   */
+  if ( active == NO_ACTIVE_VECTOR ) {
+    return;
+  }
+
   bsp_interrupt_assert( bsp_interrupt_is_valid_vector( active ) );
 
   bsp_interrupt_handler_dispatch_unchecked( active );
@@ -193,31 +256,29 @@ void bsp_interrupt_facility_initialize( void )
   /* Set everything to level interrupts */
   MATRIX_REG( INTERRUPT_CORE0_CPU_INT_TYPE_REG ) = 0x0U;
   /*
-   * Start at interrupt 1, interrupt 0 is invalid but included in the external
-   * interrupt count
+   * From 0, because source 0 is the WiFi MAC.  The CPU-side channel 0 is the
+   * reserved one, and nothing here indexes channels by vector.
    */
-  for ( uint8_t vec = 1; vec < RISCV_MAXIMUM_EXTERNAL_INTERRUPTS; vec++ ) {
+  for ( uint8_t vec = 0; vec < RISCV_MAXIMUM_EXTERNAL_INTERRUPTS; vec++ ) {
     bsp_interrupt_set_priority( vec, 14 );
   }
 
   _RISCV_MMIO_store_release_fence();
   riscv_interrupt_enable( cookie );
 
-  /*
-   * Clear all mappings. Start at interrupt 1, interrupt 0 is invalid but
-   * included in the external interrupt count
-   */
-  for ( uint8_t vec = 1; vec < RISCV_MAXIMUM_EXTERNAL_INTERRUPTS; vec++ ) {
+  /* Clear all mappings, source 0 included. */
+  for ( uint8_t vec = 0; vec < RISCV_MAXIMUM_EXTERNAL_INTERRUPTS; vec++ ) {
     bsp_interrupt_vector_disable( vec );
   }
 }
 
 bool bsp_interrupt_is_valid_vector( rtems_vector_number vector )
 {
-  if ( vector == 0 ) {
-    return false;
-  }
-
+  /*
+   * Vector 0 IS valid.  A vector here is a peripheral interrupt source, not a
+   * CPU interrupt channel, and while channel 0 is reserved by the hardware,
+   * source 0 is the WiFi MAC.  Rejecting it made that interrupt unusable.
+   */
   return vector < (rtems_vector_number) RISCV_MAXIMUM_EXTERNAL_INTERRUPTS;
 }
 

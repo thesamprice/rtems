@@ -56,6 +56,14 @@
 
 #include <rtems/devnull.h>
 
+/*
+ * GPIO, for <bsp/gpio.h>.  One 32-bit register bank with 22 of its bits
+ * brought out to pads, GPIO0 to GPIO21.  Both numbers describe the C3; a
+ * second chip in this family would move them to its chip definitions header.
+ */
+#define BSP_GPIO_PIN_COUNT     22
+#define BSP_GPIO_PINS_PER_BANK 32
+
 #ifdef __cplusplus
 extern "C" {
 #endif
