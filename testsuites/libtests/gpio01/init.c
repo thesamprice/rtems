@@ -283,7 +283,7 @@ static void test_read_write( int fd )
   int               value;
 
   memset( &config, 0, sizeof( config ) );
-  config.direction = RTEMS_GPIO_DIRECTION_BIDIRECTIONAL;
+  config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
   rtems_test_assert(
     rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ) == 0
   );
@@ -317,7 +317,7 @@ static void test_active_low( int fd )
   int               value;
 
   memset( &config, 0, sizeof( config ) );
-  config.direction = RTEMS_GPIO_DIRECTION_BIDIRECTIONAL;
+  config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
   config.flags = RTEMS_GPIO_FLAG_ACTIVE_LOW;
   config.initial_value = 1;
 
@@ -337,18 +337,41 @@ static void test_active_low( int fd )
   rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL2 ) == 0 );
 }
 
+#define TEST_GPIO_WORDS RTEMS_GPIO_BITMAP_WORDS( TEST_GPIO_PIN_COUNT )
+
+static void test_bit_put( uint32_t *map, uint32_t pin, bool value )
+{
+  uint32_t word = pin / RTEMS_GPIO_BITMAP_WORD_BITS;
+  uint32_t bit = 1u << ( pin % RTEMS_GPIO_BITMAP_WORD_BITS );
+
+  if ( value ) {
+    map[ word ] |= bit;
+  } else {
+    map[ word ] &= ~bit;
+  }
+}
+
+static bool test_bit_get( const uint32_t *map, uint32_t pin )
+{
+  return ( map[ pin / RTEMS_GPIO_BITMAP_WORD_BITS ]
+    & ( 1u << ( pin % RTEMS_GPIO_BITMAP_WORD_BITS ) ) ) != 0;
+}
+
 /*
- * The multiple-pin calls exist so that pins change together.  The part
- * worth testing is the failure: a list with one bad pin in it changes
- * nothing at all, because a half-applied bus is worse than a refused one.
+ * The multiple-pin calls exist so that a set of pins is written as one
+ * transaction.  The part worth testing is the failure: a bitmap with one
+ * unconfigured pin selected changes nothing at all, because a half-applied
+ * bus is worse than a refused one.
  */
 static void test_multiple( int fd )
 {
-  rtems_gpio_config   config;
-  rtems_gpio_pin_list list;
+  rtems_gpio_config     config;
+  rtems_gpio_pin_bitmap map;
+  uint32_t              mask[ TEST_GPIO_WORDS ];
+  uint32_t              values[ TEST_GPIO_WORDS ];
 
   memset( &config, 0, sizeof( config ) );
-  config.direction = RTEMS_GPIO_DIRECTION_BIDIRECTIONAL;
+  config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
 
   rtems_test_assert(
     rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ) == 0
@@ -357,35 +380,50 @@ static void test_multiple( int fd )
     rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL2, &config ) == 0
   );
 
-  memset( &list, 0, sizeof( list ) );
-  list.count = 2;
-  list.pins[ 0 ] = TEST_GPIO_PIN_FULL;
-  list.pins[ 1 ] = TEST_GPIO_PIN_FULL2;
-  list.values = 0x3;
+  memset( mask, 0, sizeof( mask ) );
+  memset( values, 0, sizeof( values ) );
+  map.word_count = TEST_GPIO_WORDS;
+  map.mask = mask;
+  map.values = values;
 
-  rtems_test_assert( rtems_gpio_pin_set_multiple( fd, &list ) == 0 );
+  test_bit_put( mask, TEST_GPIO_PIN_FULL, true );
+  test_bit_put( mask, TEST_GPIO_PIN_FULL2, true );
+  test_bit_put( values, TEST_GPIO_PIN_FULL, true );
+  test_bit_put( values, TEST_GPIO_PIN_FULL2, true );
+
+  rtems_test_assert( rtems_gpio_pin_set_multiple( fd, &map ) == 0 );
   rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 1 );
   rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL2 ) == 1 );
 
-  list.values = 0x1;
-  rtems_test_assert( rtems_gpio_pin_set_multiple( fd, &list ) == 0 );
+  test_bit_put( values, TEST_GPIO_PIN_FULL2, false );
+  rtems_test_assert( rtems_gpio_pin_set_multiple( fd, &map ) == 0 );
   rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 1 );
   rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL2 ) == 0 );
 
-  list.values = 0;
-  rtems_test_assert( rtems_gpio_pin_get_multiple( fd, &list ) == 0 );
-  rtems_test_assert( list.values == 0x1 );
+  memset( values, 0, sizeof( values ) );
+  rtems_test_assert( rtems_gpio_pin_get_multiple( fd, &map ) == 0 );
+  rtems_test_assert( test_bit_get( values, TEST_GPIO_PIN_FULL ) );
+  rtems_test_assert( !test_bit_get( values, TEST_GPIO_PIN_FULL2 ) );
 
-  /* Third pin is not configured, so none of the three is written. */
-  list.count = 3;
-  list.pins[ 2 ] = TEST_GPIO_PIN_FULL3;
-  list.values = 0x0;
-  assert_fails( rtems_gpio_pin_set_multiple( fd, &list ), EBADF );
+  /* A selected pin nobody configured, so none of the selection is written. */
+  test_bit_put( mask, TEST_GPIO_PIN_FULL3, true );
+  memset( values, 0, sizeof( values ) );
+  assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), EBADF );
   rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 1 );
+  test_bit_put( mask, TEST_GPIO_PIN_FULL3, false );
 
-  /* More pins than the list can hold. */
-  list.count = RTEMS_GPIO_PIN_LIST_MAX + 1;
-  assert_fails( rtems_gpio_pin_set_multiple( fd, &list ), EINVAL );
+  /*
+   * A bitmap that is not the controller's width.  There is no maximum any
+   * more, so the error is disagreeing with pin_count rather than exceeding
+   * a limit.
+   */
+  map.word_count = TEST_GPIO_WORDS + 1;
+  assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), EINVAL );
+  map.word_count = TEST_GPIO_WORDS;
+
+  map.mask = NULL;
+  assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), EINVAL );
+  map.mask = mask;
 
   rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ) == 0 );
   rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL2 ) == 0 );
@@ -454,11 +492,13 @@ static void test_interrupts( int fd )
  */
 static void test_unimplemented( void )
 {
-  rtems_gpio_config   config;
-  rtems_gpio_pin_info info;
-  rtems_gpio_pin_list list;
-  int                 fd;
-  int                 value;
+  rtems_gpio_config     config;
+  rtems_gpio_pin_info   info;
+  rtems_gpio_pin_bitmap map;
+  uint32_t              mask[ TEST_GPIO_WORDS ];
+  uint32_t              values[ TEST_GPIO_WORDS ];
+  int                   fd;
+  int                   value;
 
   fd = open( GPIO_MIN_PATH, O_RDWR );
   rtems_test_assert( fd >= 0 );
@@ -488,16 +528,32 @@ static void test_unimplemented( void )
     ENOTSUP
   );
 
-  memset( &list, 0, sizeof( list ) );
-  list.count = 1;
-  list.pins[ 0 ] = TEST_GPIO_PIN_FULL;
-  assert_fails( rtems_gpio_pin_set_multiple( fd, &list ), ENOTSUP );
-  assert_fails( rtems_gpio_pin_get_multiple( fd, &list ), ENOTSUP );
+  memset( mask, 0, sizeof( mask ) );
+  memset( values, 0, sizeof( values ) );
+  map.word_count = TEST_GPIO_WORDS;
+  map.mask = mask;
+  map.values = values;
+  test_bit_put( mask, TEST_GPIO_PIN_FULL, true );
+  assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), ENOTSUP );
+  assert_fails( rtems_gpio_pin_get_multiple( fd, &map ), ENOTSUP );
 
   /* Something that is not one of ours. */
   assert_fails( ioctl( fd, _IOR( 'G', 200, int ), &value ), ENOTTY );
 
   rtems_test_assert( close( fd ) == 0 );
+}
+
+static int test_gpio_stub_get_info(
+  rtems_gpio_ctrl     *ctrl,
+  uint32_t             pin,
+  rtems_gpio_pin_info *info
+)
+{
+  (void) ctrl;
+  (void) pin;
+  (void) info;
+
+  return 0;
 }
 
 /*
@@ -508,7 +564,11 @@ static void test_unimplemented( void )
 static void test_registration_is_checked( void )
 {
   static const rtems_gpio_handlers no_info = { .pin_get_info = NULL };
+  static const rtems_gpio_handlers with_info = {
+    .pin_get_info = test_gpio_stub_get_info
+  };
   rtems_gpio_ctrl                  ctrl;
+  uint32_t                         words[ 1 ];
 
   memset( &ctrl, 0, sizeof( ctrl ) );
   rtems_test_assert( rtems_gpio_ctrl_init( NULL ) == EINVAL );
@@ -523,6 +583,22 @@ static void test_registration_is_checked( void )
   /* A controller with no pins is not a controller. */
   ctrl.handlers = &no_info;
   ctrl.pin_count = 0;
+  rtems_test_assert( rtems_gpio_ctrl_init( &ctrl ) == EINVAL );
+
+  /*
+   * And one that answers everything else but brought no storage for the
+   * polarity the generic layer keeps on its behalf.  Refused rather than
+   * accepted, because an active-low pin on such a controller would read
+   * and drive the wrong way round with nothing to say why.
+   */
+  ctrl.handlers = &with_info;
+  ctrl.pin_count = 4;
+  ctrl.active_low = NULL;
+  ctrl.scratch = words;
+  rtems_test_assert( rtems_gpio_ctrl_init( &ctrl ) == EINVAL );
+
+  ctrl.active_low = words;
+  ctrl.scratch = NULL;
   rtems_test_assert( rtems_gpio_ctrl_init( &ctrl ) == EINVAL );
 }
 

@@ -40,6 +40,8 @@
 #include <rtems.h>
 #include <rtems/thread.h>
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <sys/ioccom.h>
 
@@ -79,13 +81,23 @@ typedef struct rtems_gpio_ctrl rtems_gpio_ctrl;
 #define RTEMS_GPIO_NAME_MAX 32
 
 /**
- * @brief This constant represents the maximum number of pins one
- *   rtems_gpio_pin_list may carry.
- *
- * Sized so that the structure stays small enough to be a sensible automatic
- * variable, since that is what an ioctl() argument is in practice.
+ * @brief This constant represents the number of pins one word of a pin
+ *   bitmap carries.
  */
-#define RTEMS_GPIO_PIN_LIST_MAX 32
+#define RTEMS_GPIO_BITMAP_WORD_BITS 32
+
+/**
+ * @brief Returns the number of bitmap words a controller of @a pin_count
+ *   pins needs.
+ *
+ * @param pin_count is the number of pins the controller publishes.
+ *
+ * @return Returns the number of uint32_t words a bitmap for that many pins
+ *   occupies.
+ */
+#define RTEMS_GPIO_BITMAP_WORDS( pin_count ) \
+  ( ( (size_t) ( pin_count ) + RTEMS_GPIO_BITMAP_WORD_BITS - 1 ) / \
+    RTEMS_GPIO_BITMAP_WORD_BITS )
 
 /**
  * @brief This enumeration represents the direction of a pin.
@@ -107,17 +119,7 @@ typedef enum {
   /**
    * @brief This enumerator indicates that the pin is an output.
    */
-  RTEMS_GPIO_DIRECTION_OUTPUT,
-
-  /**
-   * @brief This enumerator indicates that the pin is an output which can also
-   *   be read back.
-   *
-   * Not the same as an output.  Reading an output tells you what was last
-   * written on many parts and what the pad is actually at on others, and a
-   * caller that needs the second has to ask for it.
-   */
-  RTEMS_GPIO_DIRECTION_BIDIRECTIONAL
+  RTEMS_GPIO_DIRECTION_OUTPUT
 } rtems_gpio_direction;
 
 /**
@@ -213,8 +215,9 @@ typedef enum {
    * An expander behind I2C or SPI, a bit in a shift register, a line on an
    * FPGA fabric, or a pin that exists only in software.  A virtual pin
    * configures, reads, writes and reports through the same calls as any
-   * other, but its access may block, may take milliseconds, and is usually
-   * not safe from interrupt context.
+   * other.  Whether access may block is rtems_gpio_ctrl::can_block and not
+   * this: a pad reached over a slow bus may block and a software pin may
+   * not.
    */
   RTEMS_GPIO_PIN_VIRTUAL
 } rtems_gpio_pin_kind;
@@ -240,10 +243,10 @@ typedef enum {
 #define RTEMS_GPIO_CAP_OUTPUT         ( 1u << 1 )
 
 /**
- * @brief This constant indicates that the pin can be an output which is read
- *   back from the pad.
+ * @brief This constant indicates that reading an output pin returns the level
+ *   of the pad rather than the level last written to it.
  */
-#define RTEMS_GPIO_CAP_BIDIRECTIONAL  ( 1u << 2 )
+#define RTEMS_GPIO_CAP_OUTPUT_READBACK ( 1u << 2 )
 
 /**
  * @brief This constant indicates that the pin has a pull-up resistor.
@@ -277,44 +280,38 @@ typedef enum {
 #define RTEMS_GPIO_CAP_DEBOUNCE       ( 1u << 8 )
 
 /**
- * @brief This constant indicates that the pin can be inverted in hardware,
- *   which is what #RTEMS_GPIO_FLAG_ACTIVE_LOW asks for.
- */
-#define RTEMS_GPIO_CAP_INVERT         ( 1u << 9 )
-
-/**
  * @brief This constant indicates that the pin can interrupt on a low to high
  *   transition.
  */
-#define RTEMS_GPIO_CAP_EDGE_RISING    ( 1u << 10 )
+#define RTEMS_GPIO_CAP_EDGE_RISING    ( 1u << 9 )
 
 /**
  * @brief This constant indicates that the pin can interrupt on a high to low
  *   transition.
  */
-#define RTEMS_GPIO_CAP_EDGE_FALLING   ( 1u << 11 )
+#define RTEMS_GPIO_CAP_EDGE_FALLING   ( 1u << 10 )
 
 /**
  * @brief This constant indicates that the pin can interrupt on a transition
  *   in either direction.
  */
-#define RTEMS_GPIO_CAP_EDGE_BOTH      ( 1u << 12 )
+#define RTEMS_GPIO_CAP_EDGE_BOTH      ( 1u << 11 )
 
 /**
  * @brief This constant indicates that the pin can interrupt while held high.
  */
-#define RTEMS_GPIO_CAP_LEVEL_HIGH     ( 1u << 13 )
+#define RTEMS_GPIO_CAP_LEVEL_HIGH     ( 1u << 12 )
 
 /**
  * @brief This constant indicates that the pin can interrupt while held low.
  */
-#define RTEMS_GPIO_CAP_LEVEL_LOW      ( 1u << 14 )
+#define RTEMS_GPIO_CAP_LEVEL_LOW      ( 1u << 13 )
 
 /**
  * @brief This constant indicates that the pin can wake the system from a low
  *   power state.
  */
-#define RTEMS_GPIO_CAP_WAKEUP         ( 1u << 15 )
+#define RTEMS_GPIO_CAP_WAKEUP         ( 1u << 14 )
 
 /** @} */
 
@@ -522,6 +519,12 @@ typedef struct {
   uint32_t pin_count;
 
   /**
+   * @brief This member is true, if an operation on this controller may
+   *   block, otherwise false.
+   */
+  bool can_block;
+
+  /**
    * @brief This member contains what the controller calls itself, for
    *   diagnostics.
    */
@@ -529,44 +532,48 @@ typedef struct {
 } rtems_gpio_info;
 
 /**
- * @brief This structure provides several pins and their values, for the
+ * @brief This structure provides a set of pins and their values, for the
  *   operations that act on more than one pin at a time.
  *
- * The pins change together.  A driver whose hardware has a set or a clear
- * register does them in one write; one whose hardware does not still does
- * them without releasing the lock in between, so no other caller sees the
- * intermediate state.  Writing the pins one at a time through
- * rtems_gpio_pin_set() is not the same operation.
+ * Bit @a n is logical pin @a n, so a bitmap grows with
+ * rtems_gpio_ctrl::pin_count rather than with any fixed maximum, and a banked
+ * controller finds its banks already separated into words.
+ *
+ * The operation is serialised as one transaction, so no other caller observes
+ * an intermediate state.  Simultaneous physical transitions are @b not
+ * implied: a controller wider than one register needs a write per register.
  */
 typedef struct {
   /**
-   * @brief This member contains how many entries of pins and values are in
-   *   use.
-   */
-  uint32_t count;
-
-  /**
-   * @brief This member contains the logical pins to act on.
-   */
-  uint32_t pins[ RTEMS_GPIO_PIN_LIST_MAX ];
-
-  /**
-   * @brief This member contains one bit per entry of pins, in the same order.
+   * @brief This member contains how many words mask and values point to.
    *
-   * Bit 0 is pins[0].  Logical levels, so #RTEMS_GPIO_FLAG_ACTIVE_LOW applies
-   * per pin.
+   * RTEMS_GPIO_BITMAP_WORDS() of the controller's pin count.
    */
-  uint32_t values;
-} rtems_gpio_pin_list;
+  size_t    word_count;
+
+  /**
+   * @brief This member selects the pins to act on, one bit per pin.
+   */
+  uint32_t *mask;
+
+  /**
+   * @brief This member contains one logical level per selected pin.
+   *
+   * Read for a set and written for a get.  Logical levels, so
+   * #RTEMS_GPIO_FLAG_ACTIVE_LOW applies per pin.  Bits not selected by mask
+   * are ignored on a set and undefined on a get.
+   */
+  uint32_t *values;
+} rtems_gpio_pin_bitmap;
 
 /**
  * @brief This type represents the interrupt handler a pin calls.
  *
- * Runs in whatever context the driver raises it from.  For a physical pin
- * that is usually interrupt context, so the handler is bound by the same
- * rules as any other RTEMS interrupt handler.  For a virtual pin behind a bus
- * it is usually a task.  rtems_gpio_pin_get_info() is how a caller tells
- * which it has.
+ * Runs in whatever context the driver raises it from.  Where
+ * rtems_gpio_ctrl::can_block is false that is usually interrupt context, so
+ * the handler is bound by the same rules as any other RTEMS interrupt
+ * handler; where it is true the handler usually runs in a task.
+ * rtems_gpio_get_info() is how a caller tells which it has.
  *
  * @param pin is the logical pin that raised the interrupt.
  *
@@ -652,18 +659,27 @@ typedef struct {
 
   /**
    * @brief This member reads several pins as one operation.
+   *
+   * Both bitmaps are RTEMS_GPIO_BITMAP_WORDS() of rtems_gpio_ctrl::pin_count
+   * words, and carry physical levels: the generic layer applies
+   * #RTEMS_GPIO_FLAG_ACTIVE_LOW above this call.
    */
   int ( *pin_get_multiple )(
-    rtems_gpio_ctrl     *ctrl,
-    rtems_gpio_pin_list *list
+    rtems_gpio_ctrl *ctrl,
+    const uint32_t  *mask,
+    uint32_t        *values
   );
 
   /**
    * @brief This member writes several pins as one operation.
+   *
+   * Both bitmaps are RTEMS_GPIO_BITMAP_WORDS() of rtems_gpio_ctrl::pin_count
+   * words, and carry physical levels.
    */
   int ( *pin_set_multiple )(
-    rtems_gpio_ctrl           *ctrl,
-    const rtems_gpio_pin_list *list
+    rtems_gpio_ctrl *ctrl,
+    const uint32_t  *mask,
+    const uint32_t  *values
   );
 
   /**
@@ -713,6 +729,37 @@ struct rtems_gpio_ctrl {
    * @brief This member contains what the controller calls itself.
    */
   const char *name;
+
+  /**
+   * @brief This member is true, if an operation on this controller may
+   *   block, otherwise false.
+   *
+   * True for a controller reached over a bus, such as an I2C or SPI
+   * expander, and false for one that is a few memory mapped registers.  A
+   * caller in interrupt context must not use a controller that may block.
+   */
+  bool can_block;
+
+  /**
+   * @brief This member contains one bit per pin, set while that pin is
+   *   configured #RTEMS_GPIO_FLAG_ACTIVE_LOW.
+   *
+   * Supplied by the driver as RTEMS_GPIO_BITMAP_WORDS() of pin_count words
+   * and maintained by the generic layer, which applies the polarity above
+   * the handlers.  A controller with no inversion register supports active
+   * low for free this way.
+   */
+  uint32_t *active_low;
+
+  /**
+   * @brief This member contains scratch space for one bitmap.
+   *
+   * Supplied by the driver as RTEMS_GPIO_BITMAP_WORDS() of pin_count words
+   * and used only by the generic layer, which needs somewhere to build the
+   * physical levels for a bulk write without modifying the caller's bitmap.
+   * Only touched under the controller lock.
+   */
+  uint32_t *scratch;
 
   /**
    * @brief This member serialises access to the controller.
@@ -847,16 +894,18 @@ typedef struct {
 /**
  * @brief Reads several pins.
  *
- * The argument type is a pointer to rtems_gpio_pin_list.
+ * The argument type is a pointer to rtems_gpio_pin_bitmap.
  */
-#define RTEMS_GPIO_IOCTL_PIN_GET_MULTIPLE _IOWR( 'G', 8, rtems_gpio_pin_list )
+#define RTEMS_GPIO_IOCTL_PIN_GET_MULTIPLE \
+  _IOWR( 'G', 8, rtems_gpio_pin_bitmap )
 
 /**
  * @brief Writes several pins.
  *
- * The argument type is a pointer to rtems_gpio_pin_list.
+ * The argument type is a pointer to rtems_gpio_pin_bitmap.
  */
-#define RTEMS_GPIO_IOCTL_PIN_SET_MULTIPLE _IOW( 'G', 9, rtems_gpio_pin_list )
+#define RTEMS_GPIO_IOCTL_PIN_SET_MULTIPLE \
+  _IOW( 'G', 9, rtems_gpio_pin_bitmap )
 
 /**
  * @brief Enables a pin's interrupt.
@@ -1084,12 +1133,12 @@ int rtems_gpio_pin_toggle( int fd, uint32_t pin );
  * @param fd is the descriptor for the controller's device node.
  *
  * @param[in, out] list is the pins to read on the way in, and their levels in
- *   rtems_gpio_pin_list::values on the way out.
+ *   rtems_gpio_pin_bitmap::values on the way out.
  *
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_get_multiple( int fd, rtems_gpio_pin_list *list );
+int rtems_gpio_pin_get_multiple( int fd, rtems_gpio_pin_bitmap *list );
 
 /**
  * @brief Writes several pins as one operation.
@@ -1101,7 +1150,7 @@ int rtems_gpio_pin_get_multiple( int fd, rtems_gpio_pin_list *list );
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_set_multiple( int fd, const rtems_gpio_pin_list *list );
+int rtems_gpio_pin_set_multiple( int fd, const rtems_gpio_pin_bitmap *list );
 
 /**
  * @brief Starts delivering a pin's interrupt to a handler.

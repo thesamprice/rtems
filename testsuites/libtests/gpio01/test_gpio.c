@@ -57,10 +57,10 @@ typedef struct {
 
 #define TEST_GPIO_CAP_FULL                                             \
   ( RTEMS_GPIO_CAP_INPUT | RTEMS_GPIO_CAP_OUTPUT |                     \
-    RTEMS_GPIO_CAP_BIDIRECTIONAL | RTEMS_GPIO_CAP_PULL_UP |            \
+    RTEMS_GPIO_CAP_OUTPUT_READBACK | RTEMS_GPIO_CAP_PULL_UP |          \
     RTEMS_GPIO_CAP_PULL_DOWN | RTEMS_GPIO_CAP_OPEN_DRAIN |             \
     RTEMS_GPIO_CAP_DRIVE_STRENGTH | RTEMS_GPIO_CAP_DEBOUNCE |          \
-    RTEMS_GPIO_CAP_INVERT | RTEMS_GPIO_CAP_EDGE_RISING |               \
+    RTEMS_GPIO_CAP_EDGE_RISING |                                       \
     RTEMS_GPIO_CAP_EDGE_FALLING | RTEMS_GPIO_CAP_EDGE_BOTH )
 
 static const test_gpio_pin test_gpio_pins[ TEST_GPIO_PIN_COUNT ] = {
@@ -133,6 +133,12 @@ typedef struct {
 typedef struct {
   rtems_gpio_ctrl     base;
   test_gpio_pin_state pins[ TEST_GPIO_PIN_COUNT ];
+  uint32_t            active_low[
+    RTEMS_GPIO_BITMAP_WORDS( TEST_GPIO_PIN_COUNT )
+  ];
+  uint32_t            scratch[
+    RTEMS_GPIO_BITMAP_WORDS( TEST_GPIO_PIN_COUNT )
+  ];
 } test_gpio_ctrl;
 
 static test_gpio_ctrl test_gpio_instance;
@@ -144,29 +150,12 @@ static test_gpio_ctrl *test_gpio_downcast( rtems_gpio_ctrl *ctrl )
 }
 
 /*
- * Inversion is applied here, in the driver, and not in the generic layer.
- * The API says a level is logical and a driver that reports
- * RTEMS_GPIO_CAP_INVERT undertakes to do the inverting; a driver whose
- * hardware inverts for it would do nothing at all in these two functions,
- * which is why the generic layer cannot do it on everyone's behalf.
+ * There is deliberately no inversion anywhere in this driver.  A level here
+ * is the level of the pad, and RTEMS_GPIO_FLAG_ACTIVE_LOW is applied above
+ * by the generic layer, which is what lets a controller with no inversion
+ * register support active low pins.  test_gpio_raw_level() is how the test
+ * reads the pad, and it is the same number this file stores.
  */
-static int test_gpio_to_pad( const test_gpio_pin_state *state, int value )
-{
-  if ( ( state->config.flags & RTEMS_GPIO_FLAG_ACTIVE_LOW ) != 0 ) {
-    return value != 0 ? 0 : 1;
-  }
-
-  return value != 0 ? 1 : 0;
-}
-
-static int test_gpio_from_pad( const test_gpio_pin_state *state, int level )
-{
-  if ( ( state->config.flags & RTEMS_GPIO_FLAG_ACTIVE_LOW ) != 0 ) {
-    return level != 0 ? 0 : 1;
-  }
-
-  return level != 0 ? 1 : 0;
-}
 
 static int test_gpio_pin_get_info(
   rtems_gpio_ctrl     *ctrl,
@@ -211,11 +200,8 @@ static int test_gpio_pin_configure(
   state->config = *config;
   state->in_use = true;
 
-  if (
-    config->direction == RTEMS_GPIO_DIRECTION_OUTPUT
-      || config->direction == RTEMS_GPIO_DIRECTION_BIDIRECTIONAL
-  ) {
-    state->level = test_gpio_to_pad( state, config->initial_value );
+  if ( config->direction == RTEMS_GPIO_DIRECTION_OUTPUT ) {
+    state->level = config->initial_value != 0 ? 1 : 0;
   }
 
   return 0;
@@ -252,7 +238,7 @@ static int test_gpio_pin_get( rtems_gpio_ctrl *ctrl, uint32_t pin, int *value )
     return ENOTSUP;
   }
 
-  *value = test_gpio_from_pad( state, state->level );
+  *value = state->level;
 
   return 0;
 }
@@ -266,7 +252,7 @@ static int test_gpio_pin_set( rtems_gpio_ctrl *ctrl, uint32_t pin, int value )
     return ENOTSUP;
   }
 
-  state->level = test_gpio_to_pad( state, value );
+  state->level = value != 0 ? 1 : 0;
 
   return 0;
 }
@@ -285,21 +271,32 @@ static int test_gpio_pin_toggle( rtems_gpio_ctrl *ctrl, uint32_t pin )
   return 0;
 }
 
+/*
+ * Bit n of the bitmaps is pin n of this controller, so the loop is over the
+ * pins rather than over a list, and a real driver with banked registers
+ * would work a word at a time instead.
+ */
 static int test_gpio_pin_get_multiple(
-  rtems_gpio_ctrl    *ctrl,
-  rtems_gpio_pin_list *list
+  rtems_gpio_ctrl *ctrl,
+  const uint32_t  *mask,
+  uint32_t        *values
 )
 {
   test_gpio_ctrl *self = test_gpio_downcast( ctrl );
-  uint32_t        i;
+  uint32_t        pin;
 
-  list->values = 0;
+  for ( pin = 0; pin < TEST_GPIO_PIN_COUNT; ++pin ) {
+    uint32_t word = pin / RTEMS_GPIO_BITMAP_WORD_BITS;
+    uint32_t bit = 1u << ( pin % RTEMS_GPIO_BITMAP_WORD_BITS );
 
-  for ( i = 0; i < list->count; ++i ) {
-    test_gpio_pin_state *state = &self->pins[ list->pins[ i ] ];
+    if ( ( mask[ word ] & bit ) == 0 ) {
+      continue;
+    }
 
-    if ( test_gpio_from_pad( state, state->level ) != 0 ) {
-      list->values |= 1u << i;
+    if ( self->pins[ pin ].level != 0 ) {
+      values[ word ] |= bit;
+    } else {
+      values[ word ] &= ~bit;
     }
   }
 
@@ -307,17 +304,23 @@ static int test_gpio_pin_get_multiple(
 }
 
 static int test_gpio_pin_set_multiple(
-  rtems_gpio_ctrl           *ctrl,
-  const rtems_gpio_pin_list *list
+  rtems_gpio_ctrl *ctrl,
+  const uint32_t  *mask,
+  const uint32_t  *values
 )
 {
   test_gpio_ctrl *self = test_gpio_downcast( ctrl );
-  uint32_t        i;
+  uint32_t        pin;
 
-  for ( i = 0; i < list->count; ++i ) {
-    test_gpio_pin_state *state = &self->pins[ list->pins[ i ] ];
+  for ( pin = 0; pin < TEST_GPIO_PIN_COUNT; ++pin ) {
+    uint32_t word = pin / RTEMS_GPIO_BITMAP_WORD_BITS;
+    uint32_t bit = 1u << ( pin % RTEMS_GPIO_BITMAP_WORD_BITS );
 
-    state->level = test_gpio_to_pad( state, ( list->values >> i ) & 1u );
+    if ( ( mask[ word ] & bit ) == 0 ) {
+      continue;
+    }
+
+    self->pins[ pin ].level = ( values[ word ] & bit ) != 0 ? 1 : 0;
   }
 
   return 0;
@@ -387,6 +390,8 @@ int test_gpio_register( const char *path )
   test_gpio_instance.base.handlers = &test_gpio_handlers;
   test_gpio_instance.base.pin_count = TEST_GPIO_PIN_COUNT;
   test_gpio_instance.base.name = "test-gpio";
+  test_gpio_instance.base.active_low = test_gpio_instance.active_low;
+  test_gpio_instance.base.scratch = test_gpio_instance.scratch;
 
   err = rtems_gpio_ctrl_init( &test_gpio_instance.base );
   if ( err != 0 ) {
@@ -405,6 +410,9 @@ int test_gpio_register_minimal( const char *path )
   test_gpio_minimal_instance.base.handlers = &test_gpio_minimal_handlers;
   test_gpio_minimal_instance.base.pin_count = TEST_GPIO_PIN_COUNT;
   test_gpio_minimal_instance.base.name = "test-gpio-min";
+  test_gpio_minimal_instance.base.active_low =
+    test_gpio_minimal_instance.active_low;
+  test_gpio_minimal_instance.base.scratch = test_gpio_minimal_instance.scratch;
 
   err = rtems_gpio_ctrl_init( &test_gpio_minimal_instance.base );
   if ( err != 0 ) {

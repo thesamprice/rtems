@@ -62,6 +62,41 @@
  * board that no longer boots.
  */
 
+/*
+ * Logical polarity lives here rather than in the driver.  A controller with
+ * an inversion register is the exception, not the rule, and a pin that is
+ * active low is a property of how the board wired it, not of what the
+ * silicon can do.  So the handlers below always see physical levels and
+ * this layer flips the ones the caller configured RTEMS_GPIO_FLAG_ACTIVE_LOW.
+ */
+static bool rtems_gpio_bit_get( const uint32_t *map, uint32_t pin )
+{
+  return ( map[ pin / RTEMS_GPIO_BITMAP_WORD_BITS ]
+    & ( 1u << ( pin % RTEMS_GPIO_BITMAP_WORD_BITS ) ) ) != 0;
+}
+
+static void rtems_gpio_bit_put( uint32_t *map, uint32_t pin, bool value )
+{
+  uint32_t word = pin / RTEMS_GPIO_BITMAP_WORD_BITS;
+  uint32_t bit = 1u << ( pin % RTEMS_GPIO_BITMAP_WORD_BITS );
+
+  if ( value ) {
+    map[ word ] |= bit;
+  } else {
+    map[ word ] &= ~bit;
+  }
+}
+
+static bool rtems_gpio_is_active_low( const rtems_gpio_ctrl *ctrl, uint32_t pin )
+{
+  return rtems_gpio_bit_get( ctrl->active_low, pin );
+}
+
+static int rtems_gpio_to_physical( const rtems_gpio_ctrl *ctrl, uint32_t pin, int value )
+{
+  return rtems_gpio_is_active_low( ctrl, pin ) ? ( value == 0 ) : ( value != 0 );
+}
+
 static rtems_gpio_ctrl *rtems_gpio_get_ctrl( const rtems_libio_t *iop )
 {
   return IMFS_generic_get_context_by_iop( iop );
@@ -115,9 +150,6 @@ static uint32_t rtems_gpio_required_caps( const rtems_gpio_config *config )
     case RTEMS_GPIO_DIRECTION_OUTPUT:
       caps |= RTEMS_GPIO_CAP_OUTPUT;
       break;
-    case RTEMS_GPIO_DIRECTION_BIDIRECTIONAL:
-      caps |= RTEMS_GPIO_CAP_BIDIRECTIONAL;
-      break;
     case RTEMS_GPIO_DIRECTION_NONE:
       break;
   }
@@ -138,10 +170,7 @@ static uint32_t rtems_gpio_required_caps( const rtems_gpio_config *config )
    * caller that leaves a configuration structure zeroed and asks for an
    * input should not be refused for the push-pull it did not ask for.
    */
-  if (
-    config->direction == RTEMS_GPIO_DIRECTION_OUTPUT
-      || config->direction == RTEMS_GPIO_DIRECTION_BIDIRECTIONAL
-  ) {
+  if ( config->direction == RTEMS_GPIO_DIRECTION_OUTPUT ) {
     switch ( config->drive ) {
       case RTEMS_GPIO_DRIVE_OPEN_DRAIN:
         caps |= RTEMS_GPIO_CAP_OPEN_DRAIN;
@@ -182,10 +211,6 @@ static uint32_t rtems_gpio_required_caps( const rtems_gpio_config *config )
     caps |= RTEMS_GPIO_CAP_DEBOUNCE;
   }
 
-  if ( ( config->flags & RTEMS_GPIO_FLAG_ACTIVE_LOW ) != 0 ) {
-    caps |= RTEMS_GPIO_CAP_INVERT;
-  }
-
   if ( ( config->flags & RTEMS_GPIO_FLAG_WAKEUP ) != 0 ) {
     caps |= RTEMS_GPIO_CAP_WAKEUP;
   }
@@ -201,6 +226,7 @@ static int rtems_gpio_do_configure(
 {
   rtems_gpio_pin_info info;
   uint32_t            needed;
+  int                 logical;
   int                 err;
 
   if ( ctrl->handlers->pin_configure == NULL ) {
@@ -236,7 +262,31 @@ static int rtems_gpio_do_configure(
     return ENOTSUP;
   }
 
-  return ( *ctrl->handlers->pin_configure )( ctrl, pin, config );
+  /*
+   * Record the polarity before the call, because initial_value is a logical
+   * level like any other and the handler is owed a physical one.  The
+   * caller's structure is put back afterwards: it asked in logical levels
+   * and reading its own request back changed underneath it would be a
+   * surprise.
+   */
+  rtems_gpio_bit_put(
+    ctrl->active_low,
+    pin,
+    ( config->flags & RTEMS_GPIO_FLAG_ACTIVE_LOW ) != 0
+  );
+
+  logical = config->initial_value;
+  config->initial_value = rtems_gpio_to_physical( ctrl, pin, logical );
+
+  err = ( *ctrl->handlers->pin_configure )( ctrl, pin, config );
+
+  config->initial_value = logical;
+
+  if ( err != 0 ) {
+    rtems_gpio_bit_put( ctrl->active_low, pin, false );
+  }
+
+  return err;
 }
 
 /*
@@ -262,61 +312,124 @@ static int rtems_gpio_check_configured( rtems_gpio_ctrl *ctrl, uint32_t pin )
   return 0;
 }
 
-static int rtems_gpio_do_pin_set_multiple(
-  rtems_gpio_ctrl           *ctrl,
-  const rtems_gpio_pin_list *list
+/*
+ * Every selected pin is checked before any of it is applied.  A partly
+ * applied set is worse than a refused one: the caller is told it failed and
+ * the hardware is in a state it did not ask for and cannot infer.
+ */
+static int rtems_gpio_check_bitmap(
+  rtems_gpio_ctrl              *ctrl,
+  const rtems_gpio_pin_bitmap  *map
 )
 {
-  uint32_t i;
+  uint32_t pin;
+  int      err;
+
+  if ( map->mask == NULL || map->values == NULL ) {
+    return EINVAL;
+  }
+
+  if ( map->word_count != RTEMS_GPIO_BITMAP_WORDS( ctrl->pin_count ) ) {
+    return EINVAL;
+  }
+
+  for ( pin = 0; pin < ctrl->pin_count; ++pin ) {
+    if ( !rtems_gpio_bit_get( map->mask, pin ) ) {
+      continue;
+    }
+
+    err = rtems_gpio_check_configured( ctrl, pin );
+    if ( err != 0 ) {
+      return err;
+    }
+  }
+
+  return 0;
+}
+
+static int rtems_gpio_do_pin_set_multiple(
+  rtems_gpio_ctrl             *ctrl,
+  const rtems_gpio_pin_bitmap *map
+)
+{
+  uint32_t pin;
   int      err;
 
   if ( ctrl->handlers->pin_set_multiple == NULL ) {
     return ENOTSUP;
   }
 
-  if ( list->count > RTEMS_GPIO_PIN_LIST_MAX ) {
-    return EINVAL;
+  err = rtems_gpio_check_bitmap( ctrl, map );
+  if ( err != 0 ) {
+    return err;
   }
 
   /*
-   * Checked in full before any of it is applied.  A partly applied set is
-   * worse than a refused one: the caller is told it failed and the hardware
-   * is in a state it did not ask for and cannot infer.
+   * The caller's bitmap holds logical levels and the handler takes physical
+   * ones, so the active low pins are flipped on the way down.  Done into the
+   * scratch word rather than in place because the argument is const and is
+   * the caller's.
    */
-  for ( i = 0; i < list->count; ++i ) {
-    err = rtems_gpio_check_configured( ctrl, list->pins[ i ] );
-    if ( err != 0 ) {
-      return err;
+  for ( pin = 0; pin < ctrl->pin_count; ++pin ) {
+    bool value;
+
+    if ( !rtems_gpio_bit_get( map->mask, pin ) ) {
+      continue;
     }
+
+    value = rtems_gpio_bit_get( map->values, pin );
+    rtems_gpio_bit_put(
+      ctrl->scratch,
+      pin,
+      rtems_gpio_to_physical( ctrl, pin, value ? 1 : 0 ) != 0
+    );
   }
 
-  return ( *ctrl->handlers->pin_set_multiple )( ctrl, list );
+  return ( *ctrl->handlers->pin_set_multiple )(
+    ctrl,
+    map->mask,
+    ctrl->scratch
+  );
 }
 
 static int rtems_gpio_do_pin_get_multiple(
-  rtems_gpio_ctrl     *ctrl,
-  rtems_gpio_pin_list *list
+  rtems_gpio_ctrl       *ctrl,
+  rtems_gpio_pin_bitmap *map
 )
 {
-  uint32_t i;
+  uint32_t pin;
   int      err;
 
   if ( ctrl->handlers->pin_get_multiple == NULL ) {
     return ENOTSUP;
   }
 
-  if ( list->count > RTEMS_GPIO_PIN_LIST_MAX ) {
-    return EINVAL;
+  err = rtems_gpio_check_bitmap( ctrl, map );
+  if ( err != 0 ) {
+    return err;
   }
 
-  for ( i = 0; i < list->count; ++i ) {
-    err = rtems_gpio_check_configured( ctrl, list->pins[ i ] );
-    if ( err != 0 ) {
-      return err;
+  err = ( *ctrl->handlers->pin_get_multiple )( ctrl, map->mask, map->values );
+  if ( err != 0 ) {
+    return err;
+  }
+
+  /* Physical on the way up, logical to the caller. */
+  for ( pin = 0; pin < ctrl->pin_count; ++pin ) {
+    if ( !rtems_gpio_bit_get( map->mask, pin ) ) {
+      continue;
+    }
+
+    if ( rtems_gpio_is_active_low( ctrl, pin ) ) {
+      rtems_gpio_bit_put(
+        map->values,
+        pin,
+        !rtems_gpio_bit_get( map->values, pin )
+      );
     }
   }
 
-  return ( *ctrl->handlers->pin_get_multiple )( ctrl, list );
+  return 0;
 }
 
 static int rtems_gpio_ioctl(
@@ -340,6 +453,7 @@ static int rtems_gpio_ioctl(
 
       memset( info, 0, sizeof( *info ) );
       info->pin_count = ctrl->pin_count;
+      info->can_block = ctrl->can_block;
       if ( ctrl->name != NULL ) {
         strncpy( info->name, ctrl->name, sizeof( info->name ) - 1 );
       }
@@ -389,6 +503,12 @@ static int rtems_gpio_ioctl(
           pc->pin,
           &pc->config
         );
+
+        /* Back into the logical levels the caller configured in. */
+        if ( err == 0 ) {
+          pc->config.initial_value =
+            rtems_gpio_to_physical( ctrl, pc->pin, pc->config.initial_value );
+        }
       }
       break;
     }
@@ -405,6 +525,10 @@ static int rtems_gpio_ioctl(
       if ( err == 0 ) {
         err = ( *ctrl->handlers->pin_release )( ctrl, pin );
       }
+
+      if ( err == 0 ) {
+        rtems_gpio_bit_put( ctrl->active_low, pin, false );
+      }
       break;
     }
 
@@ -420,6 +544,10 @@ static int rtems_gpio_ioctl(
       if ( err == 0 ) {
         err = ( *ctrl->handlers->pin_get )( ctrl, pv->pin, &pv->value );
       }
+
+      if ( err == 0 && rtems_gpio_is_active_low( ctrl, pv->pin ) ) {
+        pv->value = ( pv->value == 0 );
+      }
       break;
     }
 
@@ -433,7 +561,11 @@ static int rtems_gpio_ioctl(
 
       err = rtems_gpio_check_configured( ctrl, pv->pin );
       if ( err == 0 ) {
-        err = ( *ctrl->handlers->pin_set )( ctrl, pv->pin, pv->value != 0 );
+        err = ( *ctrl->handlers->pin_set )(
+          ctrl,
+          pv->pin,
+          rtems_gpio_to_physical( ctrl, pv->pin, pv->value )
+        );
       }
       break;
     }
@@ -576,6 +708,22 @@ int rtems_gpio_ctrl_init( rtems_gpio_ctrl *ctrl )
   if ( ctrl->pin_count == 0 ) {
     return EINVAL;
   }
+
+  /*
+   * The generic layer owns logical polarity, so it needs somewhere to keep
+   * it.  Required rather than optional: a driver that forgot the storage
+   * would otherwise get a controller whose active low pins silently read
+   * and drive the wrong way round.
+   */
+  if ( ctrl->active_low == NULL || ctrl->scratch == NULL ) {
+    return EINVAL;
+  }
+
+  memset(
+    ctrl->active_low,
+    0,
+    RTEMS_GPIO_BITMAP_WORDS( ctrl->pin_count ) * sizeof( *ctrl->active_low )
+  );
 
   rtems_mutex_init( &ctrl->mutex, ctrl->name != NULL ? ctrl->name : "GPIO" );
 
@@ -750,12 +898,12 @@ int rtems_gpio_pin_toggle( int fd, uint32_t pin )
   return ioctl( fd, RTEMS_GPIO_IOCTL_PIN_TOGGLE, &pin );
 }
 
-int rtems_gpio_pin_get_multiple( int fd, rtems_gpio_pin_list *list )
+int rtems_gpio_pin_get_multiple( int fd, rtems_gpio_pin_bitmap *list )
 {
   return ioctl( fd, RTEMS_GPIO_IOCTL_PIN_GET_MULTIPLE, list );
 }
 
-int rtems_gpio_pin_set_multiple( int fd, const rtems_gpio_pin_list *list )
+int rtems_gpio_pin_set_multiple( int fd, const rtems_gpio_pin_bitmap *list )
 {
   return ioctl( fd, RTEMS_GPIO_IOCTL_PIN_SET_MULTIPLE, list );
 }
