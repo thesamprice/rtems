@@ -199,7 +199,7 @@ typedef struct {
 /* The controller, with the storage the generic layer expects of a driver. */
 typedef struct {
   /** @brief This member contains the generic controller. */
-  rtems_gpio_ctrl  base;
+  rtems_gpio_drv_ctrl  base;
   /** @brief This member contains the logical polarity of each pin. */
   uint32_t         active_low[ ESP32C3_GPIO_WORDS ];
   /** @brief This member contains scratch space for a bulk write. */
@@ -212,7 +212,7 @@ typedef struct {
 
 static esp32c3_gpio_ctrl esp32c3_gpio_instance;
 
-static esp32c3_gpio_ctrl *esp32c3_gpio_downcast( rtems_gpio_ctrl *ctrl )
+static esp32c3_gpio_ctrl *esp32c3_gpio_downcast( rtems_gpio_drv_ctrl *ctrl )
 {
   return RTEMS_CONTAINER_OF( ctrl, esp32c3_gpio_ctrl, base );
 }
@@ -232,7 +232,7 @@ static esp32c3_gpio_ctrl *esp32c3_gpio_downcast( rtems_gpio_ctrl *ctrl )
     RTEMS_GPIO_CAP_WAKEUP )
 
 static int esp32c3_gpio_pin_get_info(
-  rtems_gpio_ctrl     *ctrl,
+  rtems_gpio_drv_ctrl     *ctrl,
   uint32_t             pin,
   rtems_gpio_pin_info *info
 )
@@ -319,7 +319,7 @@ static uint32_t esp32c3_gpio_int_type( rtems_gpio_trigger trigger )
 }
 
 static int esp32c3_gpio_pin_configure(
-  rtems_gpio_ctrl   *ctrl,
+  rtems_gpio_drv_ctrl   *ctrl,
   uint32_t           pin,
   rtems_gpio_config *config
 )
@@ -408,7 +408,7 @@ static int esp32c3_gpio_pin_configure(
   return 0;
 }
 
-static int esp32c3_gpio_pin_release( rtems_gpio_ctrl *ctrl, uint32_t pin )
+static int esp32c3_gpio_pin_release( rtems_gpio_drv_ctrl *ctrl, uint32_t pin )
 {
   esp32c3_gpio_ctrl *self = esp32c3_gpio_downcast( ctrl );
   uint32_t           cfg;
@@ -431,7 +431,7 @@ static int esp32c3_gpio_pin_release( rtems_gpio_ctrl *ctrl, uint32_t pin )
 }
 
 static int esp32c3_gpio_pin_get(
-  rtems_gpio_ctrl *ctrl,
+  rtems_gpio_drv_ctrl *ctrl,
   uint32_t         pin,
   int             *value
 )
@@ -444,7 +444,7 @@ static int esp32c3_gpio_pin_get(
 }
 
 static int esp32c3_gpio_pin_set(
-  rtems_gpio_ctrl *ctrl,
+  rtems_gpio_drv_ctrl *ctrl,
   uint32_t         pin,
   int              value
 )
@@ -458,7 +458,7 @@ static int esp32c3_gpio_pin_set(
   return 0;
 }
 
-static int esp32c3_gpio_pin_toggle( rtems_gpio_ctrl *ctrl, uint32_t pin )
+static int esp32c3_gpio_pin_toggle( rtems_gpio_drv_ctrl *ctrl, uint32_t pin )
 {
   (void) ctrl;
 
@@ -480,7 +480,7 @@ static int esp32c3_gpio_pin_toggle( rtems_gpio_ctrl *ctrl, uint32_t pin )
  * per word, up to the caller's word count and no further.
  */
 static int esp32c3_gpio_pin_get_multiple(
-  rtems_gpio_ctrl *ctrl,
+  rtems_gpio_drv_ctrl *ctrl,
   const uint32_t  *mask,
   uint32_t        *values,
   size_t           words
@@ -501,7 +501,7 @@ static int esp32c3_gpio_pin_get_multiple(
 }
 
 static int esp32c3_gpio_pin_set_multiple(
-  rtems_gpio_ctrl *ctrl,
+  rtems_gpio_drv_ctrl *ctrl,
   const uint32_t  *mask,
   const uint32_t  *values,
   size_t           words
@@ -542,7 +542,7 @@ static void esp32c3_gpio_isr( void *arg )
 }
 
 static int esp32c3_gpio_pin_irq_enable(
-  rtems_gpio_ctrl       *ctrl,
+  rtems_gpio_drv_ctrl       *ctrl,
   uint32_t               pin,
   rtems_gpio_irq_handler handler,
   void                  *arg
@@ -567,7 +567,7 @@ static int esp32c3_gpio_pin_irq_enable(
   return 0;
 }
 
-static int esp32c3_gpio_pin_irq_disable( rtems_gpio_ctrl *ctrl, uint32_t pin )
+static int esp32c3_gpio_pin_irq_disable( rtems_gpio_drv_ctrl *ctrl, uint32_t pin )
 {
   esp32c3_gpio_ctrl *self = esp32c3_gpio_downcast( ctrl );
   uint32_t           cfg;
@@ -580,7 +580,7 @@ static int esp32c3_gpio_pin_irq_disable( rtems_gpio_ctrl *ctrl, uint32_t pin )
   return 0;
 }
 
-static const rtems_gpio_handlers esp32c3_gpio_handlers = {
+static const rtems_gpio_drv_handlers esp32c3_gpio_handlers = {
   .pin_get_info = esp32c3_gpio_pin_get_info,
   .pin_configure = esp32c3_gpio_pin_configure,
   .pin_release = esp32c3_gpio_pin_release,
@@ -616,7 +616,7 @@ int esp32c3_gpio_register( const char *path )
   self->base.active_low = self->active_low;
   self->base.scratch = self->scratch;
 
-  err = rtems_gpio_ctrl_init( &self->base );
+  err = rtems_gpio_drv_ctrl_init( &self->base );
   if ( err != 0 ) {
     return err;
   }
@@ -632,5 +632,5 @@ int esp32c3_gpio_register( const char *path )
     return EIO;
   }
 
-  return rtems_gpio_ctrl_register( &self->base, path );
+  return rtems_gpio_drv_ctrl_register( &self->base, path );
 }
