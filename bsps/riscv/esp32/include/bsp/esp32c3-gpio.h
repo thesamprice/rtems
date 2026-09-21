@@ -76,7 +76,7 @@ extern "C" {
  *
  * @return Returns an errno otherwise.
  */
-int esp32c3_gpio_register( const char *path );
+int esp32c3_gpio_register(const char* path);
 
 /** @} */
 
