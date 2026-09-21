@@ -88,7 +88,7 @@ static void rtems_gpio_bit_put( uint32_t *map, uint32_t pin, bool value )
 }
 
 static bool rtems_gpio_is_active_low(
-  const rtems_gpio_ctrl *ctrl,
+  const rtems_gpio_drv_ctrl *ctrl,
   uint32_t               pin
 )
 {
@@ -96,7 +96,7 @@ static bool rtems_gpio_is_active_low(
 }
 
 static int rtems_gpio_to_physical(
-  const rtems_gpio_ctrl *ctrl,
+  const rtems_gpio_drv_ctrl *ctrl,
   uint32_t               pin,
   int                    value
 )
@@ -108,17 +108,17 @@ static int rtems_gpio_to_physical(
   return value != 0;
 }
 
-static rtems_gpio_ctrl *rtems_gpio_get_ctrl( const rtems_libio_t *iop )
+static rtems_gpio_drv_ctrl *rtems_gpio_get_ctrl( const rtems_libio_t *iop )
 {
   return IMFS_generic_get_context_by_iop( iop );
 }
 
-static void rtems_gpio_ctrl_obtain( rtems_gpio_ctrl *ctrl )
+static void rtems_gpio_drv_ctrl_obtain( rtems_gpio_drv_ctrl *ctrl )
 {
   rtems_mutex_lock( &ctrl->mutex );
 }
 
-static void rtems_gpio_ctrl_unlock( rtems_gpio_ctrl *ctrl )
+static void rtems_gpio_drv_ctrl_unlock( rtems_gpio_drv_ctrl *ctrl )
 {
   rtems_mutex_unlock( &ctrl->mutex );
 }
@@ -129,7 +129,7 @@ static void rtems_gpio_ctrl_unlock( rtems_gpio_ctrl *ctrl )
  * is not asked at all.
  */
 static int rtems_gpio_pin_info_locked(
-  rtems_gpio_ctrl     *ctrl,
+  rtems_gpio_drv_ctrl     *ctrl,
   uint32_t             pin,
   rtems_gpio_pin_info *info
 )
@@ -230,7 +230,7 @@ static uint32_t rtems_gpio_required_caps( const rtems_gpio_config *config )
 }
 
 static int rtems_gpio_do_configure(
-  rtems_gpio_ctrl   *ctrl,
+  rtems_gpio_drv_ctrl   *ctrl,
   uint32_t           pin,
   rtems_gpio_config *config
 )
@@ -306,7 +306,7 @@ static int rtems_gpio_do_configure(
  * configured is how a caller with an off-by-one writes to a pad that belongs
  * to another driver.
  */
-static int rtems_gpio_check_configured( rtems_gpio_ctrl *ctrl, uint32_t pin )
+static int rtems_gpio_check_configured( rtems_gpio_drv_ctrl *ctrl, uint32_t pin )
 {
   rtems_gpio_pin_info info;
   int                 err;
@@ -333,7 +333,7 @@ static int rtems_gpio_check_configured( rtems_gpio_ctrl *ctrl, uint32_t pin )
  * by the pins the controller has.
  */
 static uint32_t rtems_gpio_bitmap_pins(
-  const rtems_gpio_ctrl       *ctrl,
+  const rtems_gpio_drv_ctrl       *ctrl,
   const rtems_gpio_pin_bitmap *map
 )
 {
@@ -343,7 +343,7 @@ static uint32_t rtems_gpio_bitmap_pins(
 }
 
 static int rtems_gpio_check_bitmap(
-  rtems_gpio_ctrl              *ctrl,
+  rtems_gpio_drv_ctrl              *ctrl,
   const rtems_gpio_pin_bitmap  *map
 )
 {
@@ -384,7 +384,7 @@ static int rtems_gpio_check_bitmap(
 }
 
 static int rtems_gpio_do_pin_set_multiple(
-  rtems_gpio_ctrl             *ctrl,
+  rtems_gpio_drv_ctrl             *ctrl,
   const rtems_gpio_pin_bitmap *map
 )
 {
@@ -430,7 +430,7 @@ static int rtems_gpio_do_pin_set_multiple(
 }
 
 static int rtems_gpio_do_pin_get_multiple(
-  rtems_gpio_ctrl       *ctrl,
+  rtems_gpio_drv_ctrl       *ctrl,
   rtems_gpio_pin_bitmap *map
 )
 {
@@ -480,14 +480,14 @@ static int rtems_gpio_ioctl(
   void           *arg
 )
 {
-  rtems_gpio_ctrl *ctrl = rtems_gpio_get_ctrl( iop );
+  rtems_gpio_drv_ctrl *ctrl = rtems_gpio_get_ctrl( iop );
   int              err;
 
   if ( arg == NULL ) {
     rtems_set_errno_and_return_minus_one( EINVAL );
   }
 
-  rtems_gpio_ctrl_obtain( ctrl );
+  rtems_gpio_drv_ctrl_obtain( ctrl );
 
   switch ( command ) {
     case RTEMS_GPIO_IOCTL_GET_INFO: {
@@ -680,7 +680,7 @@ static int rtems_gpio_ioctl(
       break;
   }
 
-  rtems_gpio_ctrl_unlock( ctrl );
+  rtems_gpio_drv_ctrl_unlock( ctrl );
 
   if ( err == 0 ) {
     return 0;
@@ -710,7 +710,7 @@ static const rtems_filesystem_file_handlers_r rtems_gpio_handler = {
 
 static void rtems_gpio_node_destroy( IMFS_jnode_t *node )
 {
-  rtems_gpio_ctrl *ctrl;
+  rtems_gpio_drv_ctrl *ctrl;
 
   ctrl = IMFS_generic_get_context_by_node( node );
 
@@ -730,7 +730,7 @@ static const IMFS_node_control rtems_gpio_node_control =
     rtems_gpio_node_destroy
   );
 
-int rtems_gpio_ctrl_init( rtems_gpio_ctrl *ctrl )
+int rtems_gpio_drv_ctrl_init( rtems_gpio_drv_ctrl *ctrl )
 {
   if ( ctrl == NULL || ctrl->handlers == NULL ) {
     return EINVAL;
@@ -772,7 +772,7 @@ int rtems_gpio_ctrl_init( rtems_gpio_ctrl *ctrl )
   return 0;
 }
 
-int rtems_gpio_ctrl_register( rtems_gpio_ctrl *ctrl, const char *path )
+int rtems_gpio_drv_ctrl_register( rtems_gpio_drv_ctrl *ctrl, const char *path )
 {
   int rv;
 

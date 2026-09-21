@@ -138,7 +138,7 @@ typedef struct {
 } test_gpio_pin_state;
 
 typedef struct {
-  rtems_gpio_ctrl     base;
+  rtems_gpio_drv_ctrl     base;
   test_gpio_pin_state pins[ TEST_GPIO_PIN_COUNT ];
   uint32_t            active_low[
     RTEMS_GPIO_BITMAP_WORDS( TEST_GPIO_PIN_COUNT )
@@ -151,7 +151,7 @@ typedef struct {
 static test_gpio_ctrl test_gpio_instance;
 static test_gpio_ctrl test_gpio_minimal_instance;
 
-static test_gpio_ctrl *test_gpio_downcast( rtems_gpio_ctrl *ctrl )
+static test_gpio_ctrl *test_gpio_downcast( rtems_gpio_drv_ctrl *ctrl )
 {
   return RTEMS_CONTAINER_OF( ctrl, test_gpio_ctrl, base );
 }
@@ -165,7 +165,7 @@ static test_gpio_ctrl *test_gpio_downcast( rtems_gpio_ctrl *ctrl )
  */
 
 static int test_gpio_pin_get_info(
-  rtems_gpio_ctrl     *ctrl,
+  rtems_gpio_drv_ctrl     *ctrl,
   uint32_t             pin,
   rtems_gpio_pin_info *info
 )
@@ -197,7 +197,7 @@ static int test_gpio_pin_get_info(
 }
 
 static int test_gpio_pin_configure(
-  rtems_gpio_ctrl   *ctrl,
+  rtems_gpio_drv_ctrl   *ctrl,
   uint32_t           pin,
   rtems_gpio_config *config
 )
@@ -225,7 +225,7 @@ static int test_gpio_pin_configure(
 }
 
 static int test_gpio_pin_get_config(
-  rtems_gpio_ctrl   *ctrl,
+  rtems_gpio_drv_ctrl   *ctrl,
   uint32_t           pin,
   rtems_gpio_config *config
 )
@@ -237,7 +237,7 @@ static int test_gpio_pin_get_config(
   return 0;
 }
 
-static int test_gpio_pin_release( rtems_gpio_ctrl *ctrl, uint32_t pin )
+static int test_gpio_pin_release( rtems_gpio_drv_ctrl *ctrl, uint32_t pin )
 {
   test_gpio_ctrl *self = test_gpio_downcast( ctrl );
 
@@ -246,7 +246,7 @@ static int test_gpio_pin_release( rtems_gpio_ctrl *ctrl, uint32_t pin )
   return 0;
 }
 
-static int test_gpio_pin_get( rtems_gpio_ctrl *ctrl, uint32_t pin, int *value )
+static int test_gpio_pin_get( rtems_gpio_drv_ctrl *ctrl, uint32_t pin, int *value )
 {
   test_gpio_ctrl      *self = test_gpio_downcast( ctrl );
   test_gpio_pin_state *state = &self->pins[ pin ];
@@ -260,7 +260,7 @@ static int test_gpio_pin_get( rtems_gpio_ctrl *ctrl, uint32_t pin, int *value )
   return 0;
 }
 
-static int test_gpio_pin_set( rtems_gpio_ctrl *ctrl, uint32_t pin, int value )
+static int test_gpio_pin_set( rtems_gpio_drv_ctrl *ctrl, uint32_t pin, int value )
 {
   test_gpio_ctrl      *self = test_gpio_downcast( ctrl );
   test_gpio_pin_state *state = &self->pins[ pin ];
@@ -274,7 +274,7 @@ static int test_gpio_pin_set( rtems_gpio_ctrl *ctrl, uint32_t pin, int value )
   return 0;
 }
 
-static int test_gpio_pin_toggle( rtems_gpio_ctrl *ctrl, uint32_t pin )
+static int test_gpio_pin_toggle( rtems_gpio_drv_ctrl *ctrl, uint32_t pin )
 {
   test_gpio_ctrl      *self = test_gpio_downcast( ctrl );
   test_gpio_pin_state *state = &self->pins[ pin ];
@@ -296,7 +296,7 @@ static int test_gpio_pin_toggle( rtems_gpio_ctrl *ctrl, uint32_t pin )
  * storage the caller never allocated.
  */
 static int test_gpio_pin_get_multiple(
-  rtems_gpio_ctrl *ctrl,
+  rtems_gpio_drv_ctrl *ctrl,
   const uint32_t  *mask,
   uint32_t        *values,
   size_t           words
@@ -329,7 +329,7 @@ static int test_gpio_pin_get_multiple(
 }
 
 static int test_gpio_pin_set_multiple(
-  rtems_gpio_ctrl *ctrl,
+  rtems_gpio_drv_ctrl *ctrl,
   const uint32_t  *mask,
   const uint32_t  *values,
   size_t           words
@@ -358,7 +358,7 @@ static int test_gpio_pin_set_multiple(
 }
 
 static int test_gpio_pin_irq_enable(
-  rtems_gpio_ctrl       *ctrl,
+  rtems_gpio_drv_ctrl       *ctrl,
   uint32_t               pin,
   rtems_gpio_irq_handler handler,
   void                  *arg
@@ -377,7 +377,7 @@ static int test_gpio_pin_irq_enable(
   return 0;
 }
 
-static int test_gpio_pin_irq_disable( rtems_gpio_ctrl *ctrl, uint32_t pin )
+static int test_gpio_pin_irq_disable( rtems_gpio_drv_ctrl *ctrl, uint32_t pin )
 {
   test_gpio_ctrl *self = test_gpio_downcast( ctrl );
 
@@ -387,7 +387,7 @@ static int test_gpio_pin_irq_disable( rtems_gpio_ctrl *ctrl, uint32_t pin )
   return 0;
 }
 
-static const rtems_gpio_handlers test_gpio_handlers = {
+static const rtems_gpio_drv_handlers test_gpio_handlers = {
   .pin_get_info = test_gpio_pin_get_info,
   .pin_configure = test_gpio_pin_configure,
   .pin_get_config = test_gpio_pin_get_config,
@@ -408,7 +408,7 @@ static const rtems_gpio_handlers test_gpio_handlers = {
  * through a null pointer, which is what the ENOTSUP half of the test
  * checks.
  */
-static const rtems_gpio_handlers test_gpio_minimal_handlers = {
+static const rtems_gpio_drv_handlers test_gpio_minimal_handlers = {
   .pin_get_info = test_gpio_pin_get_info
 };
 
@@ -424,12 +424,12 @@ int test_gpio_register( const char *path )
   test_gpio_instance.base.active_low = test_gpio_instance.active_low;
   test_gpio_instance.base.scratch = test_gpio_instance.scratch;
 
-  err = rtems_gpio_ctrl_init( &test_gpio_instance.base );
+  err = rtems_gpio_drv_ctrl_init( &test_gpio_instance.base );
   if ( err != 0 ) {
     return err;
   }
 
-  return rtems_gpio_ctrl_register( &test_gpio_instance.base, path );
+  return rtems_gpio_drv_ctrl_register( &test_gpio_instance.base, path );
 }
 
 int test_gpio_register_minimal( const char *path )
@@ -449,12 +449,12 @@ int test_gpio_register_minimal( const char *path )
     test_gpio_minimal_instance.active_low;
   test_gpio_minimal_instance.base.scratch = test_gpio_minimal_instance.scratch;
 
-  err = rtems_gpio_ctrl_init( &test_gpio_minimal_instance.base );
+  err = rtems_gpio_drv_ctrl_init( &test_gpio_minimal_instance.base );
   if ( err != 0 ) {
     return err;
   }
 
-  return rtems_gpio_ctrl_register( &test_gpio_minimal_instance.base, path );
+  return rtems_gpio_drv_ctrl_register( &test_gpio_minimal_instance.base, path );
 }
 
 int test_gpio_raw_level( uint32_t pin )

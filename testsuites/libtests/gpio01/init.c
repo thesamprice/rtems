@@ -590,7 +590,7 @@ static void test_unimplemented( void )
 }
 
 static int test_gpio_stub_get_info(
-  rtems_gpio_ctrl     *ctrl,
+  rtems_gpio_drv_ctrl     *ctrl,
   uint32_t             pin,
   rtems_gpio_pin_info *info
 )
@@ -609,27 +609,27 @@ static int test_gpio_stub_get_info(
  */
 static void test_registration_is_checked( void )
 {
-  static const rtems_gpio_handlers no_info = { .pin_get_info = NULL };
-  static const rtems_gpio_handlers with_info = {
+  static const rtems_gpio_drv_handlers no_info = { .pin_get_info = NULL };
+  static const rtems_gpio_drv_handlers with_info = {
     .pin_get_info = test_gpio_stub_get_info
   };
-  rtems_gpio_ctrl                  ctrl;
+  rtems_gpio_drv_ctrl                  ctrl;
   uint32_t                         words[ 1 ];
 
   memset( &ctrl, 0, sizeof( ctrl ) );
-  rtems_test_assert( rtems_gpio_ctrl_init( NULL ) == EINVAL );
+  rtems_test_assert( rtems_gpio_drv_ctrl_init( NULL ) == EINVAL );
 
   ctrl.handlers = NULL;
   ctrl.pin_count = 4;
-  rtems_test_assert( rtems_gpio_ctrl_init( &ctrl ) == EINVAL );
+  rtems_test_assert( rtems_gpio_drv_ctrl_init( &ctrl ) == EINVAL );
 
   ctrl.handlers = &no_info;
-  rtems_test_assert( rtems_gpio_ctrl_init( &ctrl ) == EINVAL );
+  rtems_test_assert( rtems_gpio_drv_ctrl_init( &ctrl ) == EINVAL );
 
   /* A controller with no pins is not a controller. */
   ctrl.handlers = &no_info;
   ctrl.pin_count = 0;
-  rtems_test_assert( rtems_gpio_ctrl_init( &ctrl ) == EINVAL );
+  rtems_test_assert( rtems_gpio_drv_ctrl_init( &ctrl ) == EINVAL );
 
   /*
    * And one that answers everything else but brought no storage for the
@@ -641,11 +641,11 @@ static void test_registration_is_checked( void )
   ctrl.pin_count = 4;
   ctrl.active_low = NULL;
   ctrl.scratch = words;
-  rtems_test_assert( rtems_gpio_ctrl_init( &ctrl ) == EINVAL );
+  rtems_test_assert( rtems_gpio_drv_ctrl_init( &ctrl ) == EINVAL );
 
   ctrl.active_low = words;
   ctrl.scratch = NULL;
-  rtems_test_assert( rtems_gpio_ctrl_init( &ctrl ) == EINVAL );
+  rtems_test_assert( rtems_gpio_drv_ctrl_init( &ctrl ) == EINVAL );
 }
 
 static void run_test( void )

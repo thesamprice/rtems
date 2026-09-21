@@ -49,7 +49,7 @@
 extern "C" {
 #endif /* __cplusplus */
 
-typedef struct rtems_gpio_ctrl rtems_gpio_ctrl;
+typedef struct rtems_gpio_drv_ctrl rtems_gpio_drv_ctrl;
 
 /**
  * @defgroup RTEMSGenericGPIOAPI Generic GPIO API
@@ -215,7 +215,7 @@ typedef enum {
    * An expander behind I2C or SPI, a bit in a shift register, a line on an
    * FPGA fabric, or a pin that exists only in software.  A virtual pin
    * configures, reads, writes and reports through the same calls as any
-   * other.  Whether access may block is rtems_gpio_ctrl::can_block and not
+   * other.  Whether access may block is rtems_gpio_drv_ctrl::can_block and not
    * this: a pad reached over a slow bus may block and a software pin may
    * not.
    */
@@ -582,8 +582,8 @@ typedef struct {
  * @brief This type represents the interrupt handler a pin calls.
  *
  * Runs in whatever context the driver raises it from.  Where
- * rtems_gpio_ctrl::can_block is false that is usually interrupt context, so
- * the handler is bound by the same rules as any other RTEMS interrupt
+ * rtems_gpio_drv_ctrl::can_block is false that is usually interrupt context,
+ * so the handler is bound by the same rules as any other RTEMS interrupt
  * handler; where it is true the handler usually runs in a task.
  * rtems_gpio_get_info() is how a caller tells which it has.
  *
@@ -613,7 +613,7 @@ typedef struct {
    * before configuring it.
    */
   int ( *pin_get_info )(
-    rtems_gpio_ctrl     *ctrl,
+    rtems_gpio_drv_ctrl     *ctrl,
     uint32_t             pin,
     rtems_gpio_pin_info *info
   );
@@ -627,7 +627,7 @@ typedef struct {
    * meet exactly should write what it actually applied back into @a config.
    */
   int ( *pin_configure )(
-    rtems_gpio_ctrl   *ctrl,
+    rtems_gpio_drv_ctrl   *ctrl,
     uint32_t           pin,
     rtems_gpio_config *config
   );
@@ -640,7 +640,7 @@ typedef struct {
    * including any value it rounded.
    */
   int ( *pin_get_config )(
-    rtems_gpio_ctrl   *ctrl,
+    rtems_gpio_drv_ctrl   *ctrl,
     uint32_t           pin,
     rtems_gpio_config *config
   );
@@ -648,17 +648,17 @@ typedef struct {
   /**
    * @brief This member returns a pin to its unconfigured state.
    */
-  int ( *pin_release )( rtems_gpio_ctrl *ctrl, uint32_t pin );
+  int ( *pin_release )( rtems_gpio_drv_ctrl *ctrl, uint32_t pin );
 
   /**
    * @brief This member reads a pin into @a value as a logical 0 or 1.
    */
-  int ( *pin_get )( rtems_gpio_ctrl *ctrl, uint32_t pin, int *value );
+  int ( *pin_get )( rtems_gpio_drv_ctrl *ctrl, uint32_t pin, int *value );
 
   /**
    * @brief This member writes a pin from @a value as a logical 0 or 1.
    */
-  int ( *pin_set )( rtems_gpio_ctrl *ctrl, uint32_t pin, int value );
+  int ( *pin_set )( rtems_gpio_drv_ctrl *ctrl, uint32_t pin, int value );
 
   /**
    * @brief This member inverts a pin's current level.
@@ -667,7 +667,7 @@ typedef struct {
    * access, and because a read-modify-write from the caller is not atomic
    * against another caller.
    */
-  int ( *pin_toggle )( rtems_gpio_ctrl *ctrl, uint32_t pin );
+  int ( *pin_toggle )( rtems_gpio_drv_ctrl *ctrl, uint32_t pin );
 
   /**
    * @brief This member reads several pins as one operation.
@@ -679,7 +679,7 @@ typedef struct {
    * applies #RTEMS_GPIO_FLAG_ACTIVE_LOW above this call.
    */
   int ( *pin_get_multiple )(
-    rtems_gpio_ctrl *ctrl,
+    rtems_gpio_drv_ctrl *ctrl,
     const uint32_t  *mask,
     uint32_t        *values,
     size_t           words
@@ -692,7 +692,7 @@ typedef struct {
    * limit as pin_get_multiple().
    */
   int ( *pin_set_multiple )(
-    rtems_gpio_ctrl *ctrl,
+    rtems_gpio_drv_ctrl *ctrl,
     const uint32_t  *mask,
     const uint32_t  *values,
     size_t           words
@@ -702,7 +702,7 @@ typedef struct {
    * @brief This member starts delivering a pin's interrupt to a handler.
    */
   int ( *pin_irq_enable )(
-    rtems_gpio_ctrl       *ctrl,
+    rtems_gpio_drv_ctrl       *ctrl,
     uint32_t               pin,
     rtems_gpio_irq_handler handler,
     void                  *arg
@@ -711,7 +711,7 @@ typedef struct {
   /**
    * @brief This member stops delivering a pin's interrupt.
    */
-  int ( *pin_irq_disable )( rtems_gpio_ctrl *ctrl, uint32_t pin );
+  int ( *pin_irq_disable )( rtems_gpio_drv_ctrl *ctrl, uint32_t pin );
 
   /**
    * @brief This member releases whatever the driver holds.
@@ -719,8 +719,8 @@ typedef struct {
    * Called when the node is destroyed.  May be NULL for a controller whose
    * storage is static, which most are.
    */
-  void ( *destroy )( rtems_gpio_ctrl *ctrl );
-} rtems_gpio_handlers;
+  void ( *destroy )( rtems_gpio_drv_ctrl *ctrl );
+} rtems_gpio_drv_handlers;
 
 /**
  * @brief This structure provides a GPIO controller.
@@ -729,11 +729,11 @@ typedef struct {
  * RTEMS_CONTAINER_OF(), so the generic layer needs no allocation and a
  * controller can be a static object in the BSP.
  */
-struct rtems_gpio_ctrl {
+struct rtems_gpio_drv_ctrl {
   /**
    * @brief This member contains what the driver implements.
    */
-  const rtems_gpio_handlers *handlers;
+  const rtems_gpio_drv_handlers *handlers;
 
   /**
    * @brief This member contains the number of logical pins this controller
@@ -780,8 +780,8 @@ struct rtems_gpio_ctrl {
   /**
    * @brief This member serialises access to the controller.
    *
-   * Initialised by rtems_gpio_ctrl_init().  Held across every operation, so a
-   * driver's handlers do not need locking of their own.
+   * Initialised by rtems_gpio_drv_ctrl_init().  Held across every operation,
+   * so a driver's handlers do not need locking of their own.
    */
   rtems_mutex mutex;
 };
@@ -942,6 +942,11 @@ typedef struct {
 /**
  * @name Driver Side
  *
+ * Everything here is prefixed rtems_gpio_drv_ and belongs to the driver.  An
+ * application calls none of it: a handler runs only underneath one of the
+ * file operations above, and rtems_gpio_drv_ctrl is reachable only from
+ * there, so the split in the names is also the split in what may touch what.
+ *
  * @{
  */
 
@@ -955,12 +960,12 @@ typedef struct {
  * @retval EINVAL @a ctrl is NULL, has no handlers, has no pin_get_info
  *   handler, or publishes no pins.
  */
-int rtems_gpio_ctrl_init( rtems_gpio_ctrl *ctrl );
+int rtems_gpio_drv_ctrl_init( rtems_gpio_drv_ctrl *ctrl );
 
 /**
  * @brief Publishes a controller as a device node.
  *
- * @param[in, out] ctrl is a controller that rtems_gpio_ctrl_init() has
+ * @param[in, out] ctrl is a controller that rtems_gpio_drv_ctrl_init() has
  *   returned 0 for.
  *
  * @param path is where the node goes, conventionally "/dev/gpio", or
@@ -970,7 +975,10 @@ int rtems_gpio_ctrl_init( rtems_gpio_ctrl *ctrl );
  * @retval -1 An error occurred.  The errno is set to indicate the error and
  *   the controller's destroy handler has been called.
  */
-int rtems_gpio_ctrl_register( rtems_gpio_ctrl *ctrl, const char *path );
+int rtems_gpio_drv_ctrl_register(
+  rtems_gpio_drv_ctrl *ctrl,
+  const char          *path
+);
 
 /** @} */
 
