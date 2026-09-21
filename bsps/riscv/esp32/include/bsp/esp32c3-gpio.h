@@ -50,6 +50,12 @@ extern "C" {
  *
  * @brief This group contains the ESP32-C3 GPIO controller.
  *
+ * Which pads an application may drive is a property of the board rather than
+ * of the part, so it is set in config.ini and not here:
+ * ESP32C3_GPIO_RESERVED_MASK refuses a pad outright and
+ * ESP32C3_GPIO_STRAPPING_MASK only marks one.  The console pair follows
+ * ESPRESSIF_USE_USB_CONSOLE.
+ *
  * @{
  */
 

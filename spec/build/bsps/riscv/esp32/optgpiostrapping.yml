@@ -1,0 +1,26 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-integer: null
+- assert-uint32: null
+- env-assign: null
+- format-and-define: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price
+default:
+- enabled-by: true
+  value: 0x00000304
+description: |
+  One bit per GPIO whose level is sampled at reset, so bit n marks GPIO n.
+  Unlike ESP32C3_GPIO_RESERVED_MASK this is a warning and not a refusal: the
+  pin configures normally, and rtems_gpio_pin_get_info() reports
+  RTEMS_GPIO_PIN_STRAPPING so that a caller which cares can decline it.
+
+  The default marks GPIO2, GPIO8 and GPIO9.  Set it to 0 on a design that has
+  already latched its straps and wants them back as ordinary IO.  A bit above
+  GPIO21 or a bit also set in ESP32C3_GPIO_RESERVED_MASK fails the build.
+enabled-by: true
+format: '{:#010x}'
+links: []
+name: ESP32C3_GPIO_STRAPPING_MASK
+type: build

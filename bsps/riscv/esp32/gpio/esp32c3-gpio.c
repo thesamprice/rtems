@@ -104,46 +104,79 @@ static const uint32_t esp32c3_gpio_drive_ua[ 4 ] = {
 };
 
 /*
- * What the part and the board say about each pad, as opposed to what a
- * caller may do with it.  This is the table that makes
- * RTEMS_GPIO_PIN_RESERVED worth having: GPIO12 to GPIO17 are the SPI flash
- * this chip executes from, so driving one does not produce an error, it
- * produces a board that stops running.
+ * What the board says about each pad, as opposed to what the silicon can do.
+ * This is what makes RTEMS_GPIO_PIN_RESERVED worth having: GPIO12 to GPIO17
+ * are the SPI flash this chip executes from, so driving one does not produce
+ * an error, it produces a board that stops running.
+ *
+ * Both masks are build options, because this is a property of the board and
+ * not of the part.  A module with the flash on different pads, a design that
+ * has already latched its straps and wants them back as ordinary IO, or a
+ * board that has tied a pad to something it must not drive, all set these in
+ * config.ini rather than patching the driver:
+ *
+ *   [riscv/esp32c3db]
+ *   ESP32C3_GPIO_RESERVED_MASK = 0x0003f800
+ *   ESP32C3_GPIO_STRAPPING_MASK = 0x00000304
  */
-typedef struct {
-  /** @brief This member contains the RTEMS_GPIO_PIN_* flags of the pad. */
-  uint32_t    flags;
-  /** @brief This member contains what the board calls the pad. */
-  const char *name;
-} esp32c3_gpio_pad;
-
-static const esp32c3_gpio_pad esp32c3_gpio_pads[ ESP32C3_GPIO_PIN_COUNT ] = {
-  [ 2 ]  = { RTEMS_GPIO_PIN_STRAPPING, "STRAP_BOOT2" },
-  [ 8 ]  = { RTEMS_GPIO_PIN_STRAPPING, "STRAP_BOOT8" },
-  [ 9 ]  = { RTEMS_GPIO_PIN_STRAPPING, "BOOT" },
-  [ 11 ] = { RTEMS_GPIO_PIN_RESERVED,  "VDD_SPI" },
-  [ 12 ] = { RTEMS_GPIO_PIN_RESERVED,  "SPIHD" },
-  [ 13 ] = { RTEMS_GPIO_PIN_RESERVED,  "SPIWP" },
-  [ 14 ] = { RTEMS_GPIO_PIN_RESERVED,  "SPICS0" },
-  [ 15 ] = { RTEMS_GPIO_PIN_RESERVED,  "SPICLK" },
-  [ 16 ] = { RTEMS_GPIO_PIN_RESERVED,  "SPID" },
-  [ 17 ] = { RTEMS_GPIO_PIN_RESERVED,  "SPIQ" },
-  /*
-   * Whichever pair the console is on is reserved and the other pair is not.
-   * Both keep their names either way: a name is what the pad is called on
-   * the board, and that does not change with a build option.
-   */
-#ifdef ESPRESSIF_USE_USB_CONSOLE
-  [ 18 ] = { RTEMS_GPIO_PIN_RESERVED,  "USB_D-" },
-  [ 19 ] = { RTEMS_GPIO_PIN_RESERVED,  "USB_D+" },
-  [ 20 ] = { 0,                        "U0RXD" },
-  [ 21 ] = { 0,                        "U0TXD" },
-#else
-  [ 18 ] = { 0,                        "USB_D-" },
-  [ 19 ] = { 0,                        "USB_D+" },
-  [ 20 ] = { RTEMS_GPIO_PIN_RESERVED,  "U0RXD" },
-  [ 21 ] = { RTEMS_GPIO_PIN_RESERVED,  "U0TXD" },
+#ifndef ESP32C3_GPIO_RESERVED_MASK
+/* GPIO11 VDD_SPI, and GPIO12 to GPIO17, the SPI flash. */
+#define ESP32C3_GPIO_RESERVED_MASK 0x0003f800u
 #endif
+
+#ifndef ESP32C3_GPIO_STRAPPING_MASK
+/* GPIO2, GPIO8 and GPIO9. */
+#define ESP32C3_GPIO_STRAPPING_MASK 0x00000304u
+#endif
+
+/*
+ * The console is reserved on top of whatever the board asked for, and which
+ * pair it is follows the console the BSP was built with rather than a
+ * separate setting that could disagree with it.
+ */
+#ifdef ESPRESSIF_USE_USB_CONSOLE
+#define ESP32C3_GPIO_CONSOLE_MASK ( ( 1u << 18 ) | ( 1u << 19 ) )
+#else
+#define ESP32C3_GPIO_CONSOLE_MASK ( ( 1u << 20 ) | ( 1u << 21 ) )
+#endif
+
+#define ESP32C3_GPIO_ALL_RESERVED \
+  ( ESP32C3_GPIO_RESERVED_MASK | ESP32C3_GPIO_CONSOLE_MASK )
+
+/* A mask bit above the last pad would reserve a pin that does not exist. */
+RTEMS_STATIC_ASSERT(
+  ( ( ESP32C3_GPIO_ALL_RESERVED | ESP32C3_GPIO_STRAPPING_MASK )
+    >> ESP32C3_GPIO_PIN_COUNT ) == 0,
+  esp32c3_gpio_mask_within_pin_count
+);
+
+/* A pad that is both is a contradiction: reserved means do not drive it. */
+RTEMS_STATIC_ASSERT(
+  ( ESP32C3_GPIO_ALL_RESERVED & ESP32C3_GPIO_STRAPPING_MASK ) == 0,
+  esp32c3_gpio_masks_disjoint
+);
+
+/*
+ * Names are not a build option.  A name is what the silkscreen and the
+ * datasheet call the pad, so it is true whatever the board does with it, and
+ * a board that reserves GPIO7 still wants to be told it reserved GPIO7 and
+ * not a number.
+ */
+static const char *const esp32c3_gpio_names[ ESP32C3_GPIO_PIN_COUNT ] = {
+  [ 2 ]  = "STRAP_BOOT2",
+  [ 8 ]  = "STRAP_BOOT8",
+  [ 9 ]  = "BOOT",
+  [ 11 ] = "VDD_SPI",
+  [ 12 ] = "SPIHD",
+  [ 13 ] = "SPIWP",
+  [ 14 ] = "SPICS0",
+  [ 15 ] = "SPICLK",
+  [ 16 ] = "SPID",
+  [ 17 ] = "SPIQ",
+  [ 18 ] = "USB_D-",
+  [ 19 ] = "USB_D+",
+  [ 20 ] = "U0RXD",
+  [ 21 ] = "U0TXD"
 };
 
 /* What one pad's interrupt was asked to call. */
@@ -197,20 +230,26 @@ static int esp32c3_gpio_pin_get_info(
 {
   esp32c3_gpio_ctrl *self = esp32c3_gpio_downcast( ctrl );
 
+  uint32_t bit = 1u << pin;
+
   info->kind = RTEMS_GPIO_PIN_PHYSICAL;
   info->capabilities = ESP32C3_GPIO_CAPS;
-  info->flags = esp32c3_gpio_pads[ pin ].flags;
+  info->flags = RTEMS_GPIO_PIN_AVAILABLE;
 
-  if ( ( self->in_use & ( 1u << pin ) ) != 0 ) {
+  if ( ( ESP32C3_GPIO_ALL_RESERVED & bit ) != 0 ) {
+    info->flags |= RTEMS_GPIO_PIN_RESERVED;
+  }
+
+  if ( ( ESP32C3_GPIO_STRAPPING_MASK & bit ) != 0 ) {
+    info->flags |= RTEMS_GPIO_PIN_STRAPPING;
+  }
+
+  if ( ( self->in_use & bit ) != 0 ) {
     info->flags |= RTEMS_GPIO_PIN_IN_USE;
   }
 
-  if ( esp32c3_gpio_pads[ pin ].name != NULL ) {
-    strncpy(
-      info->name,
-      esp32c3_gpio_pads[ pin ].name,
-      sizeof( info->name ) - 1
-    );
+  if ( esp32c3_gpio_names[ pin ] != NULL ) {
+    strncpy( info->name, esp32c3_gpio_names[ pin ], sizeof( info->name ) - 1 );
   }
 
   return 0;
