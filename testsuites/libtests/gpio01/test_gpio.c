@@ -183,6 +183,16 @@ static int test_gpio_pin_get_info(
 
   strncpy( info->name, test_gpio_pins[ pin ].name, sizeof( info->name ) - 1 );
 
+  /*
+   * A reserved pad names what has it.  A real driver takes this from
+   * whatever the BSP uses to arbitrate pads between its drivers; here it is
+   * a constant, because the point under test is that the generic layer
+   * carries the answer through to the caller.
+   */
+  if ( ( info->flags & RTEMS_GPIO_PIN_RESERVED ) != 0 ) {
+    strncpy( info->owner, "test-board", sizeof( info->owner ) - 1 );
+  }
+
   return 0;
 }
 

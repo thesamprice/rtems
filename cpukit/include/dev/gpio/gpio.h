@@ -506,6 +506,16 @@ typedef struct {
    * lets a configuration name a pin rather than count pads.
    */
   char name[ RTEMS_GPIO_NAME_MAX ];
+
+  /**
+   * @brief This member contains what holds the pin, or an empty string.
+   *
+   * Only meaningful with #RTEMS_GPIO_PIN_RESERVED or #RTEMS_GPIO_PIN_IN_USE,
+   * and empty unless the driver knows.  It is the difference between EACCES
+   * and EACCES because the I2C driver has the pad, which is the question
+   * actually being asked when a configure is refused.
+   */
+  char owner[ RTEMS_GPIO_NAME_MAX ];
 } rtems_gpio_pin_info;
 
 /**

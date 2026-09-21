@@ -142,6 +142,19 @@ static void test_reserved_pin_is_refused( int fd )
   );
   rtems_test_assert( ( info.flags & RTEMS_GPIO_PIN_IN_USE ) == 0 );
 
+  /*
+   * And it says what has the pad.  EACCES on its own tells a caller it may
+   * not have the pin; this tells it why, which is the difference between a
+   * log line someone can act on and one they cannot.
+   */
+  rtems_test_assert( strcmp( info.owner, "test-board" ) == 0 );
+
+  /* A pin nobody has spoken for reports no owner rather than stale text. */
+  rtems_test_assert(
+    rtems_gpio_pin_get_info( fd, TEST_GPIO_PIN_FULL, &info ) == 0
+  );
+  rtems_test_assert( info.owner[ 0 ] == '\0' );
+
   /* A pin the package does not bring out is not there to be used either. */
   assert_fails(
     rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_NO_PAD, &config ),
