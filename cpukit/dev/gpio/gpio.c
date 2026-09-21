@@ -328,6 +328,20 @@ static int rtems_gpio_check_configured( rtems_gpio_ctrl *ctrl, uint32_t pin )
  * applied set is worse than a refused one: the caller is told it failed and
  * the hardware is in a state it did not ask for and cannot infer.
  */
+/*
+ * How many pins a given bitmap actually reaches: the caller's words, capped
+ * by the pins the controller has.
+ */
+static uint32_t rtems_gpio_bitmap_pins(
+  const rtems_gpio_ctrl       *ctrl,
+  const rtems_gpio_pin_bitmap *map
+)
+{
+  uint32_t pins = (uint32_t) ( map->word_count * RTEMS_GPIO_BITMAP_WORD_BITS );
+
+  return pins < ctrl->pin_count ? pins : ctrl->pin_count;
+}
+
 static int rtems_gpio_check_bitmap(
   rtems_gpio_ctrl              *ctrl,
   const rtems_gpio_pin_bitmap  *map
@@ -340,11 +354,22 @@ static int rtems_gpio_check_bitmap(
     return EINVAL;
   }
 
-  if ( map->word_count != RTEMS_GPIO_BITMAP_WORDS( ctrl->pin_count ) ) {
+  /*
+   * Fewer words than the controller is wide is a caller that only cares
+   * about the low pins, not a caller that got it wrong, so the operation is
+   * limited to what was provided rather than refused.  More words than the
+   * controller has pins is refused: it means the caller thinks this is a
+   * bigger controller than it is, and quietly ignoring the extra would hide
+   * that.
+   */
+  if (
+    map->word_count == 0
+      || map->word_count > RTEMS_GPIO_BITMAP_WORDS( ctrl->pin_count )
+  ) {
     return EINVAL;
   }
 
-  for ( pin = 0; pin < ctrl->pin_count; ++pin ) {
+  for ( pin = 0; pin < rtems_gpio_bitmap_pins( ctrl, map ); ++pin ) {
     if ( !rtems_gpio_bit_get( map->mask, pin ) ) {
       continue;
     }
@@ -381,7 +406,7 @@ static int rtems_gpio_do_pin_set_multiple(
    * scratch word rather than in place because the argument is const and is
    * the caller's.
    */
-  for ( pin = 0; pin < ctrl->pin_count; ++pin ) {
+  for ( pin = 0; pin < rtems_gpio_bitmap_pins( ctrl, map ); ++pin ) {
     bool value;
 
     if ( !rtems_gpio_bit_get( map->mask, pin ) ) {
@@ -399,7 +424,8 @@ static int rtems_gpio_do_pin_set_multiple(
   return ( *ctrl->handlers->pin_set_multiple )(
     ctrl,
     map->mask,
-    ctrl->scratch
+    ctrl->scratch,
+    map->word_count
   );
 }
 
@@ -420,13 +446,18 @@ static int rtems_gpio_do_pin_get_multiple(
     return err;
   }
 
-  err = ( *ctrl->handlers->pin_get_multiple )( ctrl, map->mask, map->values );
+  err = ( *ctrl->handlers->pin_get_multiple )(
+    ctrl,
+    map->mask,
+    map->values,
+    map->word_count
+  );
   if ( err != 0 ) {
     return err;
   }
 
   /* Physical on the way up, logical to the caller. */
-  for ( pin = 0; pin < ctrl->pin_count; ++pin ) {
+  for ( pin = 0; pin < rtems_gpio_bitmap_pins( ctrl, map ); ++pin ) {
     if ( !rtems_gpio_bit_get( map->mask, pin ) ) {
       continue;
     }

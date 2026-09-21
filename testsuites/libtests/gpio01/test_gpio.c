@@ -82,6 +82,13 @@ static const test_gpio_pin test_gpio_pins[ TEST_GPIO_PIN_COUNT ] = {
     .kind = RTEMS_GPIO_PIN_PHYSICAL,
     .name = ""
   },
+  /* Above bit 31, so a bulk operation has to reach the second word. */
+  [ TEST_GPIO_PIN_HIGH ] = {
+    .capabilities = TEST_GPIO_CAP_FULL,
+    .flags = RTEMS_GPIO_PIN_AVAILABLE,
+    .kind = RTEMS_GPIO_PIN_PHYSICAL,
+    .name = "HIGH33"
+  },
   [ TEST_GPIO_PIN_INPUT ] = {
     .capabilities = RTEMS_GPIO_CAP_INPUT | RTEMS_GPIO_CAP_PULL_UP,
     .flags = RTEMS_GPIO_PIN_AVAILABLE,
@@ -274,18 +281,26 @@ static int test_gpio_pin_toggle( rtems_gpio_ctrl *ctrl, uint32_t pin )
 /*
  * Bit n of the bitmaps is pin n of this controller, so the loop is over the
  * pins rather than over a list, and a real driver with banked registers
- * would work a word at a time instead.
+ * would work a word at a time instead.  The caller's word count is a limit
+ * the driver has to respect: reading or writing past it would be touching
+ * storage the caller never allocated.
  */
 static int test_gpio_pin_get_multiple(
   rtems_gpio_ctrl *ctrl,
   const uint32_t  *mask,
-  uint32_t        *values
+  uint32_t        *values,
+  size_t           words
 )
 {
   test_gpio_ctrl *self = test_gpio_downcast( ctrl );
+  uint32_t        pins = (uint32_t) ( words * RTEMS_GPIO_BITMAP_WORD_BITS );
   uint32_t        pin;
 
-  for ( pin = 0; pin < TEST_GPIO_PIN_COUNT; ++pin ) {
+  if ( pins > TEST_GPIO_PIN_COUNT ) {
+    pins = TEST_GPIO_PIN_COUNT;
+  }
+
+  for ( pin = 0; pin < pins; ++pin ) {
     uint32_t word = pin / RTEMS_GPIO_BITMAP_WORD_BITS;
     uint32_t bit = 1u << ( pin % RTEMS_GPIO_BITMAP_WORD_BITS );
 
@@ -306,13 +321,19 @@ static int test_gpio_pin_get_multiple(
 static int test_gpio_pin_set_multiple(
   rtems_gpio_ctrl *ctrl,
   const uint32_t  *mask,
-  const uint32_t  *values
+  const uint32_t  *values,
+  size_t           words
 )
 {
   test_gpio_ctrl *self = test_gpio_downcast( ctrl );
+  uint32_t        pins = (uint32_t) ( words * RTEMS_GPIO_BITMAP_WORD_BITS );
   uint32_t        pin;
 
-  for ( pin = 0; pin < TEST_GPIO_PIN_COUNT; ++pin ) {
+  if ( pins > TEST_GPIO_PIN_COUNT ) {
+    pins = TEST_GPIO_PIN_COUNT;
+  }
+
+  for ( pin = 0; pin < pins; ++pin ) {
     uint32_t word = pin / RTEMS_GPIO_BITMAP_WORD_BITS;
     uint32_t bit = 1u << ( pin % RTEMS_GPIO_BITMAP_WORD_BITS );
 
@@ -405,7 +426,11 @@ int test_gpio_register_minimal( const char *path )
 {
   int err;
 
-  memset( &test_gpio_minimal_instance, 0, sizeof( test_gpio_minimal_instance ) );
+  memset(
+    &test_gpio_minimal_instance,
+    0,
+    sizeof( test_gpio_minimal_instance )
+  );
 
   test_gpio_minimal_instance.base.handlers = &test_gpio_minimal_handlers;
   test_gpio_minimal_instance.base.pin_count = TEST_GPIO_PIN_COUNT;

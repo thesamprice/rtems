@@ -535,19 +535,21 @@ typedef struct {
  * @brief This structure provides a set of pins and their values, for the
  *   operations that act on more than one pin at a time.
  *
- * Bit @a n is logical pin @a n, so a bitmap grows with
- * rtems_gpio_ctrl::pin_count rather than with any fixed maximum, and a banked
- * controller finds its banks already separated into words.
+ * Bit @a n is logical pin @a n, so a banked controller finds its banks
+ * already separated into words.  The caller owns the storage and says how
+ * much of it there is; rtems_gpio_get_info() reports the pin count to size
+ * it from.
  *
- * The operation is serialised as one transaction, so no other caller observes
- * an intermediate state.  Simultaneous physical transitions are @b not
- * implied: a controller wider than one register needs a write per register.
+ * Serialised as one transaction, so no other caller observes an intermediate
+ * state.  Simultaneous physical transitions are @b not implied.
  */
 typedef struct {
   /**
    * @brief This member contains how many words mask and values point to.
    *
-   * RTEMS_GPIO_BITMAP_WORDS() of the controller's pin count.
+   * At least one and at most RTEMS_GPIO_BITMAP_WORDS() of the controller's
+   * pin count.  Pins from word_count * #RTEMS_GPIO_BITMAP_WORD_BITS upwards
+   * are not part of the operation.
    */
   size_t    word_count;
 
@@ -660,26 +662,30 @@ typedef struct {
   /**
    * @brief This member reads several pins as one operation.
    *
-   * Both bitmaps are RTEMS_GPIO_BITMAP_WORDS() of rtems_gpio_ctrl::pin_count
-   * words, and carry physical levels: the generic layer applies
-   * #RTEMS_GPIO_FLAG_ACTIVE_LOW above this call.
+   * Both bitmaps are @a words words, which the caller allocated and which
+   * may be fewer than the controller's pin count needs.  A driver must not
+   * touch a word beyond that, so a wide controller reads only the banks the
+   * caller asked for.  The bitmaps carry physical levels: the generic layer
+   * applies #RTEMS_GPIO_FLAG_ACTIVE_LOW above this call.
    */
   int ( *pin_get_multiple )(
     rtems_gpio_ctrl *ctrl,
     const uint32_t  *mask,
-    uint32_t        *values
+    uint32_t        *values,
+    size_t           words
   );
 
   /**
    * @brief This member writes several pins as one operation.
    *
-   * Both bitmaps are RTEMS_GPIO_BITMAP_WORDS() of rtems_gpio_ctrl::pin_count
-   * words, and carry physical levels.
+   * Both bitmaps are @a words words and carry physical levels, with the same
+   * limit as pin_get_multiple().
    */
   int ( *pin_set_multiple )(
     rtems_gpio_ctrl *ctrl,
     const uint32_t  *mask,
-    const uint32_t  *values
+    const uint32_t  *values,
+    size_t           words
   );
 
   /**

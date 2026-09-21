@@ -413,11 +413,40 @@ static void test_multiple( int fd )
   test_bit_put( mask, TEST_GPIO_PIN_FULL3, false );
 
   /*
-   * A bitmap that is not the controller's width.  There is no maximum any
-   * more, so the error is disagreeing with pin_count rather than exceeding
-   * a limit.
+   * A pin in the second bitmap word.  A controller narrower than 33 pins
+   * could not tell a bulk operation that spans words from one that does not.
    */
+  rtems_test_assert(
+    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_HIGH, &config ) == 0
+  );
+
+  memset( values, 0, sizeof( values ) );
+  test_bit_put( mask, TEST_GPIO_PIN_HIGH, true );
+  test_bit_put( values, TEST_GPIO_PIN_HIGH, true );
+  test_bit_put( values, TEST_GPIO_PIN_FULL, true );
+
+  rtems_test_assert( rtems_gpio_pin_set_multiple( fd, &map ) == 0 );
+  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_HIGH ) == 1 );
+  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 1 );
+
+  /*
+   * And the caller's word count is a limit the driver works to, not a width
+   * it must match.  One word covers pins 0 to 31, so pin 33 is not part of
+   * this operation and keeps the level it already had -- even though its bit
+   * is still set in a mask the caller has simply stopped describing.
+   */
+  map.word_count = 1;
+  test_bit_put( values, TEST_GPIO_PIN_FULL, false );
+  rtems_test_assert( rtems_gpio_pin_set_multiple( fd, &map ) == 0 );
+  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 0 );
+  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_HIGH ) == 1 );
+  map.word_count = TEST_GPIO_WORDS;
+
+  /* More words than the controller has pins is still a caller that is wrong. */
   map.word_count = TEST_GPIO_WORDS + 1;
+  assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), EINVAL );
+
+  map.word_count = 0;
   assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), EINVAL );
   map.word_count = TEST_GPIO_WORDS;
 
@@ -425,6 +454,7 @@ static void test_multiple( int fd )
   assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), EINVAL );
   map.mask = mask;
 
+  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_HIGH ) == 0 );
   rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ) == 0 );
   rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL2 ) == 0 );
 }
@@ -520,7 +550,10 @@ static void test_unimplemented( void )
     ENOTSUP
   );
   assert_fails( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ), ENOTSUP );
-  assert_fails( rtems_gpio_pin_get( fd, TEST_GPIO_PIN_FULL, &value ), ENOTSUP );
+  assert_fails(
+    rtems_gpio_pin_get( fd, TEST_GPIO_PIN_FULL, &value ),
+    ENOTSUP
+  );
   assert_fails( rtems_gpio_pin_set( fd, TEST_GPIO_PIN_FULL, 1 ), ENOTSUP );
   assert_fails( rtems_gpio_pin_toggle( fd, TEST_GPIO_PIN_FULL ), ENOTSUP );
   assert_fails(

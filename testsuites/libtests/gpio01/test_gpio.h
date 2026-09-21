@@ -45,7 +45,14 @@ extern "C" {
  * provokes it.  A controller where all the pins are the same would exercise
  * one path eight times.
  */
-#define TEST_GPIO_PIN_COUNT 8
+#define TEST_GPIO_PIN_COUNT 40
+
+/*
+ * Deliberately more than one bitmap word wide.  A controller of 32 pins or
+ * fewer cannot tell a bulk operation that spans words from one that does
+ * not, and cannot exercise a caller that allocates fewer words than the
+ * controller is wide at all.
+ */
 
 /** A fully capable pin, named "LED0". */
 #define TEST_GPIO_PIN_FULL      0
@@ -63,6 +70,8 @@ extern "C" {
 #define TEST_GPIO_PIN_STRAPPING 6
 /** A virtual pin, as an expander behind a bus would be. */
 #define TEST_GPIO_PIN_VIRTUAL   7
+/** A fully capable pin in the second bitmap word. */
+#define TEST_GPIO_PIN_HIGH      33
 
 /**
  * @brief The only drive strength this controller has, in microamperes.
