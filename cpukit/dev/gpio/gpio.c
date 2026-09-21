@@ -87,14 +87,25 @@ static void rtems_gpio_bit_put( uint32_t *map, uint32_t pin, bool value )
   }
 }
 
-static bool rtems_gpio_is_active_low( const rtems_gpio_ctrl *ctrl, uint32_t pin )
+static bool rtems_gpio_is_active_low(
+  const rtems_gpio_ctrl *ctrl,
+  uint32_t               pin
+)
 {
   return rtems_gpio_bit_get( ctrl->active_low, pin );
 }
 
-static int rtems_gpio_to_physical( const rtems_gpio_ctrl *ctrl, uint32_t pin, int value )
+static int rtems_gpio_to_physical(
+  const rtems_gpio_ctrl *ctrl,
+  uint32_t               pin,
+  int                    value
+)
 {
-  return rtems_gpio_is_active_low( ctrl, pin ) ? ( value == 0 ) : ( value != 0 );
+  if ( rtems_gpio_is_active_low( ctrl, pin ) ) {
+    return value == 0;
+  }
+
+  return value != 0;
 }
 
 static rtems_gpio_ctrl *rtems_gpio_get_ctrl( const rtems_libio_t *iop )
