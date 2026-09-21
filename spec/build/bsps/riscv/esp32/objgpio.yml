@@ -1,0 +1,17 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+build-type: objects
+cflags: []
+copyrights:
+- Copyright (C) 2026 Samuel Price
+cppflags: []
+cxxflags: []
+enabled-by: true
+includes: []
+install:
+- destination: ${BSP_INCLUDEDIR}/bsp
+  source:
+  - bsps/riscv/esp32/include/bsp/esp32c3-gpio.h
+links: []
+source:
+- bsps/riscv/esp32/gpio/esp32c3-gpio.c
+type: build
