@@ -1,0 +1,17 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+build-type: objects
+cflags: []
+copyrights:
+- Copyright (C) 2026 Samuel Price
+cppflags: []
+cxxflags: []
+enabled-by: true
+includes: []
+install:
+- destination: ${BSP_INCLUDEDIR}/dev/gpio
+  source:
+  - bsps/include/dev/gpio/ti-gpio.h
+links: []
+source:
+- bsps/shared/dev/gpio/ti-gpio.c
+type: build
