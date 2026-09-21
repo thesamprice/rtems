@@ -50,11 +50,11 @@ extern "C" {
  *
  * @brief This group contains the ESP32-C3 GPIO controller.
  *
- * Which pads an application may drive is a property of the board rather than
- * of the part, so it is set in config.ini and not here:
- * ESP32C3_GPIO_RESERVED_MASK refuses a pad outright and
- * ESP32C3_GPIO_STRAPPING_MASK only marks one.  The console pair follows
- * ESPRESSIF_USE_USB_CONSOLE.
+ * Which pads an application may drive comes from three places, none of them
+ * a setting.  The SPI flash pads and the strapping pads are properties of
+ * the part.  The console pair follows ESPRESSIF_USE_USB_CONSOLE.  Pads held
+ * by another driver come from bsp_pin_claim(), where the BSP has it, so that
+ * answer cannot fall out of date with what is linked in.
  *
  * @{
  */

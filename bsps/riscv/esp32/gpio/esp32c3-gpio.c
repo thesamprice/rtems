@@ -37,6 +37,19 @@
 #include <bsp/esp32c3-gpio.h>
 #include <bsp/irq.h>
 
+/*
+ * Pad arbitration, where the BSP has it.  <bsp/pin.h> is how this BSP's I2C,
+ * UART and SPI drivers agree about pads, and a GPIO driver that did not join
+ * in would be the one component able to take a pad out from under them.
+ * Guarded because it is not in every tree carrying this BSP.
+ */
+#if defined( __has_include )
+#if __has_include( <bsp/pin.h> )
+#include <bsp/pin.h>
+#define ESP32C3_GPIO_HAS_PIN_CLAIM 1
+#endif
+#endif
+
 #include <rtems/score/basedefs.h>
 
 #include <errno.h>
@@ -104,30 +117,26 @@ static const uint32_t esp32c3_gpio_drive_ua[ 4 ] = {
 };
 
 /*
- * What the board says about each pad, as opposed to what the silicon can do.
- * This is what makes RTEMS_GPIO_PIN_RESERVED worth having: GPIO12 to GPIO17
- * are the SPI flash this chip executes from, so driving one does not produce
- * an error, it produces a board that stops running.
+ * Facts about the part, which is why they are constants here and not build
+ * options.  An earlier revision made both of these settable in config.ini
+ * and that was wrong twice over.
  *
- * Both masks are build options, because this is a property of the board and
- * not of the part.  A module with the flash on different pads, a design that
- * has already latched its straps and wants them back as ordinary IO, or a
- * board that has tied a pad to something it must not drive, all set these in
- * config.ini rather than patching the driver:
+ * They are properties of the silicon rather than of a board: ESPHome keys
+ * the same two sets on the chip variant and never on the board, and a value
+ * a board could not legitimately change is not a setting.  And for pads
+ * taken by a *driver* rather than by the part -- I2C, UART1, SPI, the
+ * console -- a static mask is the mechanism that has already failed here
+ * once: the equivalent table in docs/esp32c3-bsp.md listed GPIO7 and GPIO10
+ * as free until the UART driver started using them, and nothing announced
+ * that it had gone stale.  Those pads come from bsp_pin_owner() below, which
+ * cannot.
  *
- *   [riscv/esp32c3db]
- *   ESP32C3_GPIO_RESERVED_MASK = 0x0003f800
- *   ESP32C3_GPIO_STRAPPING_MASK = 0x00000304
+ * GPIO11 is deliberately absent.  It is VDD_SPI on modules that use the
+ * internal regulator, but it is a usable pad on this board and ESPHome does
+ * not reserve it either.
  */
-#ifndef ESP32C3_GPIO_RESERVED_MASK
-/* GPIO11 VDD_SPI, and GPIO12 to GPIO17, the SPI flash. */
-#define ESP32C3_GPIO_RESERVED_MASK 0x0003f800u
-#endif
-
-#ifndef ESP32C3_GPIO_STRAPPING_MASK
-/* GPIO2, GPIO8 and GPIO9. */
-#define ESP32C3_GPIO_STRAPPING_MASK 0x00000304u
-#endif
+#define ESP32C3_GPIO_FLASH_MASK     0x0003f000u /* GPIO12 to GPIO17 */
+#define ESP32C3_GPIO_STRAPPING_MASK 0x00000304u /* GPIO2, GPIO8, GPIO9 */
 
 /*
  * The console is reserved on top of whatever the board asked for, and which
@@ -141,7 +150,7 @@ static const uint32_t esp32c3_gpio_drive_ua[ 4 ] = {
 #endif
 
 #define ESP32C3_GPIO_ALL_RESERVED \
-  ( ESP32C3_GPIO_RESERVED_MASK | ESP32C3_GPIO_CONSOLE_MASK )
+  ( ESP32C3_GPIO_FLASH_MASK | ESP32C3_GPIO_CONSOLE_MASK )
 
 /* A mask bit above the last pad would reserve a pin that does not exist. */
 RTEMS_STATIC_ASSERT(
@@ -248,6 +257,27 @@ static int esp32c3_gpio_pin_get_info(
     info->flags |= RTEMS_GPIO_PIN_IN_USE;
   }
 
+#ifdef ESP32C3_GPIO_HAS_PIN_CLAIM
+  /*
+   * A pad another driver has taken.  Asked rather than tabulated, so that a
+   * bus this driver has never heard of still shows up, and so that the
+   * answer cannot fall out of date with what is actually linked in.
+   */
+  {
+    const char *owner = bsp_pin_owner( pin );
+
+    if ( owner != NULL && ( self->in_use & bit ) == 0 ) {
+      info->flags |= RTEMS_GPIO_PIN_RESERVED;
+      strncpy( info->owner, owner, sizeof( info->owner ) - 1 );
+    }
+  }
+#endif
+
+  if ( ( info->flags & RTEMS_GPIO_PIN_RESERVED ) != 0
+      && info->owner[ 0 ] == '\0' ) {
+    strncpy( info->owner, "esp32c3 board", sizeof( info->owner ) - 1 );
+  }
+
   if ( esp32c3_gpio_names[ pin ] != NULL ) {
     strncpy( info->name, esp32c3_gpio_names[ pin ], sizeof( info->name ) - 1 );
   }
@@ -298,6 +328,17 @@ static int esp32c3_gpio_pin_configure(
   uint32_t           mux;
   uint32_t           cfg;
   uint32_t           drive;
+
+#ifdef ESP32C3_GPIO_HAS_PIN_CLAIM
+  /*
+   * Before any register is touched, so a pad that belongs to another driver
+   * is refused rather than half configured.  A re-claim by this driver of a
+   * pad it already holds succeeds.
+   */
+  if ( !bsp_pin_claim( pin, "esp32c3 gpio" ) ) {
+    return EACCES;
+  }
+#endif
 
   mux = ESP32C3_REG( ESP32C3_IOMUX_PIN( pin ) );
   mux &= ~( ESP32C3_IOMUX_MCU_SEL_M | ESP32C3_IOMUX_FUN_DRV_M
@@ -381,6 +422,10 @@ static int esp32c3_gpio_pin_release( rtems_gpio_ctrl *ctrl, uint32_t pin )
 
   self->irq[ pin ].handler = NULL;
   self->in_use &= ~( 1u << pin );
+
+#ifdef ESP32C3_GPIO_HAS_PIN_CLAIM
+  bsp_pin_release( pin );
+#endif
 
   return 0;
 }
