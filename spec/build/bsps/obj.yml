@@ -75,6 +75,9 @@ install:
   - bsps/include/dev/can/can-virtual.h
   - bsps/include/dev/can/ctucanfd.h
   - bsps/include/dev/can/sja1000.h
+- destination: ${BSP_INCLUDEDIR}/dev/gpio
+  source:
+  - bsps/include/dev/gpio/gpio-virtual.h
 links:
 - role: build-dependency
   uid: objmpci
@@ -92,6 +95,7 @@ source:
 - bsps/shared/dev/display/font_hcms29xx.c
 - bsps/shared/dev/flash/flash_sim_flashdev.c
 - bsps/shared/dev/flash/jffs2_flashdev.c
+- bsps/shared/dev/gpio/gpio-virtual.c
 - bsps/shared/dev/i2c/i2c-2b-eeprom.c
 - bsps/shared/dev/i2c/i2c-ds1621.c
 - bsps/shared/dev/i2c/i2c-sc620.c
