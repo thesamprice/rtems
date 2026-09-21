@@ -393,15 +393,23 @@ static int esp32c3_gpio_pin_toggle( rtems_gpio_ctrl *ctrl, uint32_t pin )
  * write-one-to-set plus one write-one-to-clear -- no loop over pins, and no
  * read-modify-write to race with an interrupt handler touching another pad.
  * A part with more pads than fit in a register would do the same thing once
- * per word.
+ * per word, up to the caller's word count and no further.
  */
 static int esp32c3_gpio_pin_get_multiple(
   rtems_gpio_ctrl *ctrl,
   const uint32_t  *mask,
-  uint32_t        *values
+  uint32_t        *values,
+  size_t           words
 )
 {
   (void) ctrl;
+
+  /*
+   * All 22 pads are in word 0, and the caller always provides at least one
+   * word, so there is nothing here to clamp.  A wider part would loop to
+   * words and stop, because past that is storage the caller never allocated.
+   */
+  (void) words;
 
   values[ 0 ] = ESP32C3_REG( ESP32C3_GPIO_IN ) & mask[ 0 ];
 
@@ -411,10 +419,12 @@ static int esp32c3_gpio_pin_get_multiple(
 static int esp32c3_gpio_pin_set_multiple(
   rtems_gpio_ctrl *ctrl,
   const uint32_t  *mask,
-  const uint32_t  *values
+  const uint32_t  *values,
+  size_t           words
 )
 {
   (void) ctrl;
+  (void) words;
 
   ESP32C3_REG( ESP32C3_GPIO_OUT_W1TS ) = mask[ 0 ] & values[ 0 ];
   ESP32C3_REG( ESP32C3_GPIO_OUT_W1TC ) = mask[ 0 ] & ~values[ 0 ];
