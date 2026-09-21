@@ -567,7 +567,10 @@ static int esp32c3_gpio_pin_irq_enable(
   return 0;
 }
 
-static int esp32c3_gpio_pin_irq_disable( rtems_gpio_drv_ctrl *ctrl, uint32_t pin )
+static int esp32c3_gpio_pin_irq_disable(
+  rtems_gpio_drv_ctrl *ctrl,
+  uint32_t             pin
+)
 {
   esp32c3_gpio_ctrl *self = esp32c3_gpio_downcast( ctrl );
   uint32_t           cfg;
