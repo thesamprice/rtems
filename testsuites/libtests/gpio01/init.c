@@ -42,7 +42,7 @@
 
 const char rtems_test_name[] = "GPIO 1";
 
-#define GPIO_PATH     "/dev/gpio"
+#define GPIO_PATH "/dev/gpio"
 #define GPIO_MIN_PATH "/dev/gpio-min"
 
 /*
@@ -51,71 +51,60 @@ const char rtems_test_name[] = "GPIO 1";
  * the pad is the failure this API exists to prevent, and it looks exactly
  * like a refusal that has not.
  */
-static void assert_fails( int rv, int expected_errno )
-{
-  rtems_test_assert( rv == -1 );
-  rtems_test_assert( errno == expected_errno );
+static void assert_fails(int rv, int expected_errno) {
+  rtems_test_assert(rv == -1);
+  rtems_test_assert(errno == expected_errno);
 }
 
-static void test_controller_info( int fd )
-{
+static void test_controller_info(int fd) {
   rtems_gpio_info info;
 
-  rtems_test_assert( rtems_gpio_get_info( fd, &info ) == 0 );
-  rtems_test_assert( info.pin_count == TEST_GPIO_PIN_COUNT );
-  rtems_test_assert( strcmp( info.name, "test-gpio" ) == 0 );
+  rtems_test_assert(rtems_gpio_get_info(fd, &info) == 0);
+  rtems_test_assert(info.pin_count == TEST_GPIO_PIN_COUNT);
+  rtems_test_assert(strcmp(info.name, "test-gpio") == 0);
 }
 
-static void test_pin_info( int fd )
-{
+static void test_pin_info(int fd) {
   rtems_gpio_pin_info info;
 
-  rtems_test_assert(
-    rtems_gpio_pin_get_info( fd, TEST_GPIO_PIN_FULL, &info ) == 0
-  );
-  rtems_test_assert( info.pin == TEST_GPIO_PIN_FULL );
-  rtems_test_assert( info.kind == RTEMS_GPIO_PIN_PHYSICAL );
-  rtems_test_assert( info.flags == RTEMS_GPIO_PIN_AVAILABLE );
-  rtems_test_assert( ( info.capabilities & RTEMS_GPIO_CAP_OUTPUT ) != 0 );
-  rtems_test_assert( strcmp( info.name, "LED0" ) == 0 );
+  rtems_test_assert(rtems_gpio_pin_get_info(fd, TEST_GPIO_PIN_FULL, &info) ==
+                    0);
+  rtems_test_assert(info.pin == TEST_GPIO_PIN_FULL);
+  rtems_test_assert(info.kind == RTEMS_GPIO_PIN_PHYSICAL);
+  rtems_test_assert(info.flags == RTEMS_GPIO_PIN_AVAILABLE);
+  rtems_test_assert((info.capabilities & RTEMS_GPIO_CAP_OUTPUT) != 0);
+  rtems_test_assert(strcmp(info.name, "LED0") == 0);
 
   /* Reserved, and capable of everything, which is the point of it. */
   rtems_test_assert(
-    rtems_gpio_pin_get_info( fd, TEST_GPIO_PIN_RESERVED, &info ) == 0
-  );
-  rtems_test_assert( ( info.flags & RTEMS_GPIO_PIN_RESERVED ) != 0 );
-  rtems_test_assert( ( info.capabilities & RTEMS_GPIO_CAP_OUTPUT ) != 0 );
+      rtems_gpio_pin_get_info(fd, TEST_GPIO_PIN_RESERVED, &info) == 0);
+  rtems_test_assert((info.flags & RTEMS_GPIO_PIN_RESERVED) != 0);
+  rtems_test_assert((info.capabilities & RTEMS_GPIO_CAP_OUTPUT) != 0);
 
   rtems_test_assert(
-    rtems_gpio_pin_get_info( fd, TEST_GPIO_PIN_STRAPPING, &info ) == 0
-  );
-  rtems_test_assert( ( info.flags & RTEMS_GPIO_PIN_STRAPPING ) != 0 );
+      rtems_gpio_pin_get_info(fd, TEST_GPIO_PIN_STRAPPING, &info) == 0);
+  rtems_test_assert((info.flags & RTEMS_GPIO_PIN_STRAPPING) != 0);
 
   /* Virtual pins report themselves so a caller can tell a bus from a bit. */
-  rtems_test_assert(
-    rtems_gpio_pin_get_info( fd, TEST_GPIO_PIN_VIRTUAL, &info ) == 0
-  );
-  rtems_test_assert( info.kind == RTEMS_GPIO_PIN_VIRTUAL );
-  rtems_test_assert( ( info.capabilities & RTEMS_GPIO_CAP_OPEN_DRAIN ) == 0 );
+  rtems_test_assert(rtems_gpio_pin_get_info(fd, TEST_GPIO_PIN_VIRTUAL, &info) ==
+                    0);
+  rtems_test_assert(info.kind == RTEMS_GPIO_PIN_VIRTUAL);
+  rtems_test_assert((info.capabilities & RTEMS_GPIO_CAP_OPEN_DRAIN) == 0);
 
   /* One past the end is not a pin. */
-  assert_fails(
-    rtems_gpio_pin_get_info( fd, TEST_GPIO_PIN_COUNT, &info ),
-    ENODEV
-  );
+  assert_fails(rtems_gpio_pin_get_info(fd, TEST_GPIO_PIN_COUNT, &info), ENODEV);
 }
 
-static void test_pin_by_name( int fd )
-{
+static void test_pin_by_name(int fd) {
   uint32_t pin;
 
-  rtems_test_assert( rtems_gpio_pin_by_name( fd, "BOOT", &pin ) == 0 );
-  rtems_test_assert( pin == TEST_GPIO_PIN_STRAPPING );
+  rtems_test_assert(rtems_gpio_pin_by_name(fd, "BOOT", &pin) == 0);
+  rtems_test_assert(pin == TEST_GPIO_PIN_STRAPPING);
 
-  rtems_test_assert( rtems_gpio_pin_by_name( fd, "LED0", &pin ) == 0 );
-  rtems_test_assert( pin == TEST_GPIO_PIN_FULL );
+  rtems_test_assert(rtems_gpio_pin_by_name(fd, "LED0", &pin) == 0);
+  rtems_test_assert(pin == TEST_GPIO_PIN_FULL);
 
-  assert_fails( rtems_gpio_pin_by_name( fd, "NOT_A_PIN", &pin ), ENOENT );
+  assert_fails(rtems_gpio_pin_by_name(fd, "NOT_A_PIN", &pin), ENOENT);
 }
 
 /*
@@ -123,51 +112,41 @@ static void test_pin_by_name( int fd )
  * before the driver is asked to do anything, and the refusal is EACCES
  * rather than EBUSY: nothing is going to release it.
  */
-static void test_reserved_pin_is_refused( int fd )
-{
-  rtems_gpio_config   config;
+static void test_reserved_pin_is_refused(int fd) {
+  rtems_gpio_config config;
   rtems_gpio_pin_info info;
 
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
 
-  assert_fails(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_RESERVED, &config ),
-    EACCES
-  );
+  assert_fails(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_RESERVED, &config),
+               EACCES);
 
   /* And the refusal left it alone, rather than configuring it and failing. */
   rtems_test_assert(
-    rtems_gpio_pin_get_info( fd, TEST_GPIO_PIN_RESERVED, &info ) == 0
-  );
-  rtems_test_assert( ( info.flags & RTEMS_GPIO_PIN_IN_USE ) == 0 );
+      rtems_gpio_pin_get_info(fd, TEST_GPIO_PIN_RESERVED, &info) == 0);
+  rtems_test_assert((info.flags & RTEMS_GPIO_PIN_IN_USE) == 0);
 
   /*
    * And it says what has the pad.  EACCES on its own tells a caller it may
    * not have the pin; this tells it why, which is the difference between a
    * log line someone can act on and one they cannot.
    */
-  rtems_test_assert( strcmp( info.owner, "test-board" ) == 0 );
+  rtems_test_assert(strcmp(info.owner, "test-board") == 0);
 
   /* A pin nobody has spoken for reports no owner rather than stale text. */
-  rtems_test_assert(
-    rtems_gpio_pin_get_info( fd, TEST_GPIO_PIN_FULL, &info ) == 0
-  );
-  rtems_test_assert( info.owner[ 0 ] == '\0' );
+  rtems_test_assert(rtems_gpio_pin_get_info(fd, TEST_GPIO_PIN_FULL, &info) ==
+                    0);
+  rtems_test_assert(info.owner[0] == '\0');
 
   /* A pin the package does not bring out is not there to be used either. */
-  assert_fails(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_NO_PAD, &config ),
-    ENODEV
-  );
+  assert_fails(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_NO_PAD, &config),
+               ENODEV);
 
   /* Strapping is a warning, not a refusal: it configures. */
   rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_STRAPPING, &config ) == 0
-  );
-  rtems_test_assert(
-    rtems_gpio_pin_release( fd, TEST_GPIO_PIN_STRAPPING ) == 0
-  );
+      rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_STRAPPING, &config) == 0);
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_STRAPPING) == 0);
 }
 
 /*
@@ -175,92 +154,77 @@ static void test_reserved_pin_is_refused( int fd )
  * the pin's information before the driver is called.  So a driver need not
  * check, and more to the point cannot forget to.
  */
-static void test_capabilities_are_enforced( int fd )
-{
+static void test_capabilities_are_enforced(int fd) {
   rtems_gpio_config config;
 
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
   config.drive = RTEMS_GPIO_DRIVE_OPEN_DRAIN;
 
-  assert_fails(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_VIRTUAL, &config ),
-    ENOTSUP
-  );
+  assert_fails(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_VIRTUAL, &config),
+               ENOTSUP);
 
   /* An output on an input-only pin. */
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
-  assert_fails(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_INPUT, &config ),
-    ENOTSUP
-  );
+  assert_fails(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_INPUT, &config),
+               ENOTSUP);
 
   /* A level trigger on a part with only edges. */
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_INPUT;
   config.trigger = RTEMS_GPIO_TRIGGER_LEVEL_HIGH;
-  assert_fails(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ),
-    ENOTSUP
-  );
+  assert_fails(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config),
+               ENOTSUP);
 
   /* The same pin, an edge trigger, and it configures. */
   config.trigger = RTEMS_GPIO_TRIGGER_EDGE_RISING;
-  rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ) == 0
-  );
-  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ) == 0 );
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config) ==
+                    0);
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL) == 0);
 }
 
-static void test_configure_and_report( int fd )
-{
+static void test_configure_and_report(int fd) {
   rtems_gpio_config config;
   rtems_gpio_config read_back;
 
   /* Nothing has configured it, so it reports as unconfigured, not as an
    * error: that is the answer a caller deciding whether a pin is free
    * wants. */
-  rtems_test_assert(
-    rtems_gpio_pin_get_configuration( fd, TEST_GPIO_PIN_FULL, &read_back ) == 0
-  );
-  rtems_test_assert( read_back.direction == RTEMS_GPIO_DIRECTION_NONE );
+  rtems_test_assert(rtems_gpio_pin_get_configuration(fd, TEST_GPIO_PIN_FULL,
+                                                     &read_back) == 0);
+  rtems_test_assert(read_back.direction == RTEMS_GPIO_DIRECTION_NONE);
 
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
   config.bias = RTEMS_GPIO_BIAS_PULL_UP;
   config.initial_value = 1;
   config.debounce = 20000;
 
-  rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ) == 0
-  );
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config) ==
+                    0);
 
-  rtems_test_assert(
-    rtems_gpio_pin_get_configuration( fd, TEST_GPIO_PIN_FULL, &read_back ) == 0
-  );
-  rtems_test_assert( read_back.direction == RTEMS_GPIO_DIRECTION_OUTPUT );
-  rtems_test_assert( read_back.bias == RTEMS_GPIO_BIAS_PULL_UP );
-  rtems_test_assert( read_back.debounce == 20000 );
-  rtems_test_assert( read_back.initial_value == 1 );
+  rtems_test_assert(rtems_gpio_pin_get_configuration(fd, TEST_GPIO_PIN_FULL,
+                                                     &read_back) == 0);
+  rtems_test_assert(read_back.direction == RTEMS_GPIO_DIRECTION_OUTPUT);
+  rtems_test_assert(read_back.bias == RTEMS_GPIO_BIAS_PULL_UP);
+  rtems_test_assert(read_back.debounce == 20000);
+  rtems_test_assert(read_back.initial_value == 1);
 
   /* Configuring it set the level, so the pad is already where it should be
    * rather than glitching low until someone writes it. */
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 1 );
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL) == 1);
 
   /* A second claimant is told, rather than quietly winning. */
-  assert_fails(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ),
-    EBUSY
-  );
+  assert_fails(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config),
+               EBUSY);
 
-  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ) == 0 );
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL) == 0);
 
   /* Released, so it configures again. */
-  rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ) == 0
-  );
-  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ) == 0 );
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config) ==
+                    0);
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL) == 0);
 }
 
 /*
@@ -268,55 +232,50 @@ static void test_configure_and_report( int fd )
  * what comes back from configure() and from get_configuration() is what was
  * applied and not what was asked for.
  */
-static void test_rounding_is_reported( int fd )
-{
+static void test_rounding_is_reported(int fd) {
   rtems_gpio_config config;
   rtems_gpio_config read_back;
 
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
   config.drive_strength = 8000;
 
-  rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ) == 0
-  );
-  rtems_test_assert( config.drive_strength == TEST_GPIO_DRIVE_STRENGTH );
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config) ==
+                    0);
+  rtems_test_assert(config.drive_strength == TEST_GPIO_DRIVE_STRENGTH);
 
-  rtems_test_assert(
-    rtems_gpio_pin_get_configuration( fd, TEST_GPIO_PIN_FULL, &read_back ) == 0
-  );
-  rtems_test_assert( read_back.drive_strength == TEST_GPIO_DRIVE_STRENGTH );
+  rtems_test_assert(rtems_gpio_pin_get_configuration(fd, TEST_GPIO_PIN_FULL,
+                                                     &read_back) == 0);
+  rtems_test_assert(read_back.drive_strength == TEST_GPIO_DRIVE_STRENGTH);
 
-  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ) == 0 );
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL) == 0);
 }
 
-static void test_read_write( int fd )
-{
+static void test_read_write(int fd) {
   rtems_gpio_config config;
-  int               value;
+  int value;
 
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
-  rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ) == 0
-  );
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config) ==
+                    0);
 
-  rtems_test_assert( rtems_gpio_pin_set( fd, TEST_GPIO_PIN_FULL, 1 ) == 0 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 1 );
-  rtems_test_assert( rtems_gpio_pin_get( fd, TEST_GPIO_PIN_FULL, &value ) == 0 );
-  rtems_test_assert( value == 1 );
+  rtems_test_assert(rtems_gpio_pin_set(fd, TEST_GPIO_PIN_FULL, 1) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL) == 1);
+  rtems_test_assert(rtems_gpio_pin_get(fd, TEST_GPIO_PIN_FULL, &value) == 0);
+  rtems_test_assert(value == 1);
 
-  rtems_test_assert( rtems_gpio_pin_toggle( fd, TEST_GPIO_PIN_FULL ) == 0 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 0 );
-  rtems_test_assert( rtems_gpio_pin_get( fd, TEST_GPIO_PIN_FULL, &value ) == 0 );
-  rtems_test_assert( value == 0 );
+  rtems_test_assert(rtems_gpio_pin_toggle(fd, TEST_GPIO_PIN_FULL) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL) == 0);
+  rtems_test_assert(rtems_gpio_pin_get(fd, TEST_GPIO_PIN_FULL, &value) == 0);
+  rtems_test_assert(value == 0);
 
-  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ) == 0 );
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL) == 0);
 
   /* Driving a pin nobody configured is how an off-by-one reaches a pad that
    * belongs to another driver. */
-  assert_fails( rtems_gpio_pin_set( fd, TEST_GPIO_PIN_FULL, 1 ), EBADF );
-  assert_fails( rtems_gpio_pin_get( fd, TEST_GPIO_PIN_FULL, &value ), EBADF );
+  assert_fails(rtems_gpio_pin_set(fd, TEST_GPIO_PIN_FULL, 1), EBADF);
+  assert_fails(rtems_gpio_pin_get(fd, TEST_GPIO_PIN_FULL, &value), EBADF);
 }
 
 /*
@@ -324,50 +283,44 @@ static void test_read_write( int fd )
  * Asserting against the pad rather than against another API call is the
  * only way to tell inversion from a pair of matching mistakes.
  */
-static void test_active_low( int fd )
-{
+static void test_active_low(int fd) {
   rtems_gpio_config config;
-  int               value;
+  int value;
 
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
   config.flags = RTEMS_GPIO_FLAG_ACTIVE_LOW;
   config.initial_value = 1;
 
   rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL2, &config ) == 0
-  );
+      rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL2, &config) == 0);
 
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL2 ) == 0 );
-  rtems_test_assert(
-    rtems_gpio_pin_get( fd, TEST_GPIO_PIN_FULL2, &value ) == 0
-  );
-  rtems_test_assert( value == 1 );
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL2) == 0);
+  rtems_test_assert(rtems_gpio_pin_get(fd, TEST_GPIO_PIN_FULL2, &value) == 0);
+  rtems_test_assert(value == 1);
 
-  rtems_test_assert( rtems_gpio_pin_set( fd, TEST_GPIO_PIN_FULL2, 0 ) == 0 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL2 ) == 1 );
+  rtems_test_assert(rtems_gpio_pin_set(fd, TEST_GPIO_PIN_FULL2, 0) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL2) == 1);
 
-  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL2 ) == 0 );
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL2) == 0);
 }
 
-#define TEST_GPIO_WORDS RTEMS_GPIO_BITMAP_WORDS( TEST_GPIO_PIN_COUNT )
+#define TEST_GPIO_WORDS RTEMS_GPIO_BITMAP_WORDS(TEST_GPIO_PIN_COUNT)
 
-static void test_bit_put( uint32_t *map, uint32_t pin, bool value )
-{
+static void test_bit_put(uint32_t* map, uint32_t pin, bool value) {
   uint32_t word = pin / RTEMS_GPIO_BITMAP_WORD_BITS;
-  uint32_t bit = 1u << ( pin % RTEMS_GPIO_BITMAP_WORD_BITS );
+  uint32_t bit = 1u << (pin % RTEMS_GPIO_BITMAP_WORD_BITS);
 
-  if ( value ) {
-    map[ word ] |= bit;
+  if (value) {
+    map[word] |= bit;
   } else {
-    map[ word ] &= ~bit;
+    map[word] &= ~bit;
   }
 }
 
-static bool test_bit_get( const uint32_t *map, uint32_t pin )
-{
-  return ( map[ pin / RTEMS_GPIO_BITMAP_WORD_BITS ]
-    & ( 1u << ( pin % RTEMS_GPIO_BITMAP_WORD_BITS ) ) ) != 0;
+static bool test_bit_get(const uint32_t* map, uint32_t pin) {
+  return (map[pin / RTEMS_GPIO_BITMAP_WORD_BITS] &
+          (1u << (pin % RTEMS_GPIO_BITMAP_WORD_BITS))) != 0;
 }
 
 /*
@@ -376,71 +329,67 @@ static bool test_bit_get( const uint32_t *map, uint32_t pin )
  * unconfigured pin selected changes nothing at all, because a half-applied
  * bus is worse than a refused one.
  */
-static void test_multiple( int fd )
-{
-  rtems_gpio_config     config;
+static void test_multiple(int fd) {
+  rtems_gpio_config config;
   rtems_gpio_pin_bitmap map;
-  uint32_t              mask[ TEST_GPIO_WORDS ];
-  uint32_t              values[ TEST_GPIO_WORDS ];
+  uint32_t mask[TEST_GPIO_WORDS];
+  uint32_t values[TEST_GPIO_WORDS];
 
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
 
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config) ==
+                    0);
   rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ) == 0
-  );
-  rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL2, &config ) == 0
-  );
+      rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL2, &config) == 0);
 
-  memset( mask, 0, sizeof( mask ) );
-  memset( values, 0, sizeof( values ) );
+  memset(mask, 0, sizeof(mask));
+  memset(values, 0, sizeof(values));
   map.word_count = TEST_GPIO_WORDS;
   map.mask = mask;
   map.values = values;
 
-  test_bit_put( mask, TEST_GPIO_PIN_FULL, true );
-  test_bit_put( mask, TEST_GPIO_PIN_FULL2, true );
-  test_bit_put( values, TEST_GPIO_PIN_FULL, true );
-  test_bit_put( values, TEST_GPIO_PIN_FULL2, true );
+  test_bit_put(mask, TEST_GPIO_PIN_FULL, true);
+  test_bit_put(mask, TEST_GPIO_PIN_FULL2, true);
+  test_bit_put(values, TEST_GPIO_PIN_FULL, true);
+  test_bit_put(values, TEST_GPIO_PIN_FULL2, true);
 
-  rtems_test_assert( rtems_gpio_pin_set_multiple( fd, &map ) == 0 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 1 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL2 ) == 1 );
+  rtems_test_assert(rtems_gpio_pin_set_multiple(fd, &map) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL) == 1);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL2) == 1);
 
-  test_bit_put( values, TEST_GPIO_PIN_FULL2, false );
-  rtems_test_assert( rtems_gpio_pin_set_multiple( fd, &map ) == 0 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 1 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL2 ) == 0 );
+  test_bit_put(values, TEST_GPIO_PIN_FULL2, false);
+  rtems_test_assert(rtems_gpio_pin_set_multiple(fd, &map) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL) == 1);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL2) == 0);
 
-  memset( values, 0, sizeof( values ) );
-  rtems_test_assert( rtems_gpio_pin_get_multiple( fd, &map ) == 0 );
-  rtems_test_assert( test_bit_get( values, TEST_GPIO_PIN_FULL ) );
-  rtems_test_assert( !test_bit_get( values, TEST_GPIO_PIN_FULL2 ) );
+  memset(values, 0, sizeof(values));
+  rtems_test_assert(rtems_gpio_pin_get_multiple(fd, &map) == 0);
+  rtems_test_assert(test_bit_get(values, TEST_GPIO_PIN_FULL));
+  rtems_test_assert(!test_bit_get(values, TEST_GPIO_PIN_FULL2));
 
   /* A selected pin nobody configured, so none of the selection is written. */
-  test_bit_put( mask, TEST_GPIO_PIN_FULL3, true );
-  memset( values, 0, sizeof( values ) );
-  assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), EBADF );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 1 );
-  test_bit_put( mask, TEST_GPIO_PIN_FULL3, false );
+  test_bit_put(mask, TEST_GPIO_PIN_FULL3, true);
+  memset(values, 0, sizeof(values));
+  assert_fails(rtems_gpio_pin_set_multiple(fd, &map), EBADF);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL) == 1);
+  test_bit_put(mask, TEST_GPIO_PIN_FULL3, false);
 
   /*
    * A pin in the second bitmap word.  A controller narrower than 33 pins
    * could not tell a bulk operation that spans words from one that does not.
    */
-  rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_HIGH, &config ) == 0
-  );
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_HIGH, &config) ==
+                    0);
 
-  memset( values, 0, sizeof( values ) );
-  test_bit_put( mask, TEST_GPIO_PIN_HIGH, true );
-  test_bit_put( values, TEST_GPIO_PIN_HIGH, true );
-  test_bit_put( values, TEST_GPIO_PIN_FULL, true );
+  memset(values, 0, sizeof(values));
+  test_bit_put(mask, TEST_GPIO_PIN_HIGH, true);
+  test_bit_put(values, TEST_GPIO_PIN_HIGH, true);
+  test_bit_put(values, TEST_GPIO_PIN_FULL, true);
 
-  rtems_test_assert( rtems_gpio_pin_set_multiple( fd, &map ) == 0 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_HIGH ) == 1 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 1 );
+  rtems_test_assert(rtems_gpio_pin_set_multiple(fd, &map) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_HIGH) == 1);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL) == 1);
 
   /*
    * And the caller's word count is a limit the driver works to, not a width
@@ -449,83 +398,70 @@ static void test_multiple( int fd )
    * is still set in a mask the caller has simply stopped describing.
    */
   map.word_count = 1;
-  test_bit_put( values, TEST_GPIO_PIN_FULL, false );
-  rtems_test_assert( rtems_gpio_pin_set_multiple( fd, &map ) == 0 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_FULL ) == 0 );
-  rtems_test_assert( test_gpio_raw_level( TEST_GPIO_PIN_HIGH ) == 1 );
+  test_bit_put(values, TEST_GPIO_PIN_FULL, false);
+  rtems_test_assert(rtems_gpio_pin_set_multiple(fd, &map) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_HIGH) == 1);
   map.word_count = TEST_GPIO_WORDS;
 
   /* More words than the controller has pins is still a caller that is wrong. */
   map.word_count = TEST_GPIO_WORDS + 1;
-  assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), EINVAL );
+  assert_fails(rtems_gpio_pin_set_multiple(fd, &map), EINVAL);
 
   map.word_count = 0;
-  assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), EINVAL );
+  assert_fails(rtems_gpio_pin_set_multiple(fd, &map), EINVAL);
   map.word_count = TEST_GPIO_WORDS;
 
   map.mask = NULL;
-  assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), EINVAL );
+  assert_fails(rtems_gpio_pin_set_multiple(fd, &map), EINVAL);
   map.mask = mask;
 
-  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_HIGH ) == 0 );
-  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ) == 0 );
-  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL2 ) == 0 );
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_HIGH) == 0);
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL) == 0);
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL2) == 0);
 }
 
 static uint32_t test_irq_pin;
-static void    *test_irq_arg;
-static int      test_irq_count;
+static void* test_irq_arg;
+static int test_irq_count;
 
-static void test_irq_handler( uint32_t pin, void *arg )
-{
+static void test_irq_handler(uint32_t pin, void* arg) {
   test_irq_pin = pin;
   test_irq_arg = arg;
   ++test_irq_count;
 }
 
-static void test_interrupts( int fd )
-{
+static void test_interrupts(int fd) {
   rtems_gpio_config config;
-  int               token = 0;
+  int token = 0;
 
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_INPUT;
   config.trigger = RTEMS_GPIO_TRIGGER_EDGE_BOTH;
 
-  rtems_test_assert(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ) == 0
-  );
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config) ==
+                    0);
 
   /* A handler is required, and a null one is caught here rather than at the
    * first edge. */
-  assert_fails(
-    rtems_gpio_pin_irq_enable( fd, TEST_GPIO_PIN_FULL, NULL, NULL ),
-    EINVAL
-  );
+  assert_fails(rtems_gpio_pin_irq_enable(fd, TEST_GPIO_PIN_FULL, NULL, NULL),
+               EINVAL);
 
-  rtems_test_assert(
-    rtems_gpio_pin_irq_enable(
-      fd,
-      TEST_GPIO_PIN_FULL,
-      test_irq_handler,
-      &token
-    ) == 0
-  );
+  rtems_test_assert(rtems_gpio_pin_irq_enable(fd, TEST_GPIO_PIN_FULL,
+                                              test_irq_handler, &token) == 0);
 
   test_irq_count = 0;
-  test_gpio_fire_irq( TEST_GPIO_PIN_FULL );
-  rtems_test_assert( test_irq_count == 1 );
-  rtems_test_assert( test_irq_pin == TEST_GPIO_PIN_FULL );
-  rtems_test_assert( test_irq_arg == &token );
+  test_gpio_fire_irq(TEST_GPIO_PIN_FULL);
+  rtems_test_assert(test_irq_count == 1);
+  rtems_test_assert(test_irq_pin == TEST_GPIO_PIN_FULL);
+  rtems_test_assert(test_irq_arg == &token);
 
-  rtems_test_assert(
-    rtems_gpio_pin_irq_disable( fd, TEST_GPIO_PIN_FULL ) == 0
-  );
+  rtems_test_assert(rtems_gpio_pin_irq_disable(fd, TEST_GPIO_PIN_FULL) == 0);
 
-  test_gpio_fire_irq( TEST_GPIO_PIN_FULL );
-  rtems_test_assert( test_irq_count == 1 );
+  test_gpio_fire_irq(TEST_GPIO_PIN_FULL);
+  rtems_test_assert(test_irq_count == 1);
 
-  rtems_test_assert( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ) == 0 );
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL) == 0);
 }
 
 /*
@@ -533,71 +469,56 @@ static void test_interrupts( int fd )
  * other operation answers ENOTSUP, and none of them calls through a null
  * pointer to get there.
  */
-static void test_unimplemented( void )
-{
-  rtems_gpio_config     config;
-  rtems_gpio_pin_info   info;
+static void test_unimplemented(void) {
+  rtems_gpio_config config;
+  rtems_gpio_pin_info info;
   rtems_gpio_pin_bitmap map;
-  uint32_t              mask[ TEST_GPIO_WORDS ];
-  uint32_t              values[ TEST_GPIO_WORDS ];
-  int                   fd;
-  int                   value;
+  uint32_t mask[TEST_GPIO_WORDS];
+  uint32_t values[TEST_GPIO_WORDS];
+  int fd;
+  int value;
 
-  fd = open( GPIO_MIN_PATH, O_RDWR );
-  rtems_test_assert( fd >= 0 );
+  fd = open(GPIO_MIN_PATH, O_RDWR);
+  rtems_test_assert(fd >= 0);
 
   /* The one handler it has still works. */
-  rtems_test_assert(
-    rtems_gpio_pin_get_info( fd, TEST_GPIO_PIN_FULL, &info ) == 0
-  );
+  rtems_test_assert(rtems_gpio_pin_get_info(fd, TEST_GPIO_PIN_FULL, &info) ==
+                    0);
 
-  memset( &config, 0, sizeof( config ) );
+  memset(&config, 0, sizeof(config));
   config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
 
+  assert_fails(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config),
+               ENOTSUP);
   assert_fails(
-    rtems_gpio_pin_configure( fd, TEST_GPIO_PIN_FULL, &config ),
-    ENOTSUP
-  );
-  assert_fails(
-    rtems_gpio_pin_get_configuration( fd, TEST_GPIO_PIN_FULL, &config ),
-    ENOTSUP
-  );
-  assert_fails( rtems_gpio_pin_release( fd, TEST_GPIO_PIN_FULL ), ENOTSUP );
-  assert_fails(
-    rtems_gpio_pin_get( fd, TEST_GPIO_PIN_FULL, &value ),
-    ENOTSUP
-  );
-  assert_fails( rtems_gpio_pin_set( fd, TEST_GPIO_PIN_FULL, 1 ), ENOTSUP );
-  assert_fails( rtems_gpio_pin_toggle( fd, TEST_GPIO_PIN_FULL ), ENOTSUP );
-  assert_fails(
-    rtems_gpio_pin_irq_disable( fd, TEST_GPIO_PIN_FULL ),
-    ENOTSUP
-  );
+      rtems_gpio_pin_get_configuration(fd, TEST_GPIO_PIN_FULL, &config),
+      ENOTSUP);
+  assert_fails(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL), ENOTSUP);
+  assert_fails(rtems_gpio_pin_get(fd, TEST_GPIO_PIN_FULL, &value), ENOTSUP);
+  assert_fails(rtems_gpio_pin_set(fd, TEST_GPIO_PIN_FULL, 1), ENOTSUP);
+  assert_fails(rtems_gpio_pin_toggle(fd, TEST_GPIO_PIN_FULL), ENOTSUP);
+  assert_fails(rtems_gpio_pin_irq_disable(fd, TEST_GPIO_PIN_FULL), ENOTSUP);
 
-  memset( mask, 0, sizeof( mask ) );
-  memset( values, 0, sizeof( values ) );
+  memset(mask, 0, sizeof(mask));
+  memset(values, 0, sizeof(values));
   map.word_count = TEST_GPIO_WORDS;
   map.mask = mask;
   map.values = values;
-  test_bit_put( mask, TEST_GPIO_PIN_FULL, true );
-  assert_fails( rtems_gpio_pin_set_multiple( fd, &map ), ENOTSUP );
-  assert_fails( rtems_gpio_pin_get_multiple( fd, &map ), ENOTSUP );
+  test_bit_put(mask, TEST_GPIO_PIN_FULL, true);
+  assert_fails(rtems_gpio_pin_set_multiple(fd, &map), ENOTSUP);
+  assert_fails(rtems_gpio_pin_get_multiple(fd, &map), ENOTSUP);
 
   /* Something that is not one of ours. */
-  assert_fails( ioctl( fd, _IOR( 'G', 200, int ), &value ), ENOTTY );
+  assert_fails(ioctl(fd, _IOR('G', 200, int), &value), ENOTTY);
 
-  rtems_test_assert( close( fd ) == 0 );
+  rtems_test_assert(close(fd) == 0);
 }
 
-static int test_gpio_stub_get_info(
-  rtems_gpio_drv_ctrl     *ctrl,
-  uint32_t             pin,
-  rtems_gpio_pin_info *info
-)
-{
-  (void) ctrl;
-  (void) pin;
-  (void) info;
+static int test_gpio_stub_get_info(rtems_gpio_drv_ctrl* ctrl, uint32_t pin,
+                                   rtems_gpio_pin_info* info) {
+  (void)ctrl;
+  (void)pin;
+  (void)info;
 
   return 0;
 }
@@ -607,29 +528,27 @@ static int test_gpio_stub_get_info(
  * check in the generic layer is built on that answer, and registering it
  * anyway would mean skipping them without saying so.
  */
-static void test_registration_is_checked( void )
-{
-  static const rtems_gpio_drv_handlers no_info = { .pin_get_info = NULL };
+static void test_registration_is_checked(void) {
+  static const rtems_gpio_drv_handlers no_info = {.pin_get_info = NULL};
   static const rtems_gpio_drv_handlers with_info = {
-    .pin_get_info = test_gpio_stub_get_info
-  };
-  rtems_gpio_drv_ctrl                  ctrl;
-  uint32_t                         words[ 1 ];
+      .pin_get_info = test_gpio_stub_get_info};
+  rtems_gpio_drv_ctrl ctrl;
+  uint32_t words[1];
 
-  memset( &ctrl, 0, sizeof( ctrl ) );
-  rtems_test_assert( rtems_gpio_drv_ctrl_init( NULL ) == EINVAL );
+  memset(&ctrl, 0, sizeof(ctrl));
+  rtems_test_assert(rtems_gpio_drv_ctrl_init(NULL) == EINVAL);
 
   ctrl.handlers = NULL;
   ctrl.pin_count = 4;
-  rtems_test_assert( rtems_gpio_drv_ctrl_init( &ctrl ) == EINVAL );
+  rtems_test_assert(rtems_gpio_drv_ctrl_init(&ctrl) == EINVAL);
 
   ctrl.handlers = &no_info;
-  rtems_test_assert( rtems_gpio_drv_ctrl_init( &ctrl ) == EINVAL );
+  rtems_test_assert(rtems_gpio_drv_ctrl_init(&ctrl) == EINVAL);
 
   /* A controller with no pins is not a controller. */
   ctrl.handlers = &no_info;
   ctrl.pin_count = 0;
-  rtems_test_assert( rtems_gpio_drv_ctrl_init( &ctrl ) == EINVAL );
+  rtems_test_assert(rtems_gpio_drv_ctrl_init(&ctrl) == EINVAL);
 
   /*
    * And one that answers everything else but brought no storage for the
@@ -641,54 +560,53 @@ static void test_registration_is_checked( void )
   ctrl.pin_count = 4;
   ctrl.active_low = NULL;
   ctrl.scratch = words;
-  rtems_test_assert( rtems_gpio_drv_ctrl_init( &ctrl ) == EINVAL );
+  rtems_test_assert(rtems_gpio_drv_ctrl_init(&ctrl) == EINVAL);
 
   ctrl.active_low = words;
   ctrl.scratch = NULL;
-  rtems_test_assert( rtems_gpio_drv_ctrl_init( &ctrl ) == EINVAL );
+  rtems_test_assert(rtems_gpio_drv_ctrl_init(&ctrl) == EINVAL);
 }
 
-static void run_test( void )
-{
+static void run_test(void) {
   rtems_resource_snapshot snapshot;
-  int                     fd;
-  int                     warm_up;
+  int fd;
+  int warm_up;
 
-  rtems_test_assert( test_gpio_register( GPIO_PATH ) == 0 );
-  rtems_test_assert( test_gpio_register_minimal( GPIO_MIN_PATH ) == 0 );
+  rtems_test_assert(test_gpio_register(GPIO_PATH) == 0);
+  rtems_test_assert(test_gpio_register_minimal(GPIO_MIN_PATH) == 0);
 
   /*
    * Both nodes are opened and closed once before the baseline is taken.
    * The first open of an IMFS node allocates things it keeps deliberately,
    * and counting those as a leak reports a failure that is not one.
    */
-  warm_up = open( GPIO_PATH, O_RDWR );
-  rtems_test_assert( warm_up >= 0 );
-  rtems_test_assert( close( warm_up ) == 0 );
-  warm_up = open( GPIO_MIN_PATH, O_RDWR );
-  rtems_test_assert( warm_up >= 0 );
-  rtems_test_assert( close( warm_up ) == 0 );
+  warm_up = open(GPIO_PATH, O_RDWR);
+  rtems_test_assert(warm_up >= 0);
+  rtems_test_assert(close(warm_up) == 0);
+  warm_up = open(GPIO_MIN_PATH, O_RDWR);
+  rtems_test_assert(warm_up >= 0);
+  rtems_test_assert(close(warm_up) == 0);
 
-  rtems_resource_snapshot_take( &snapshot );
+  rtems_resource_snapshot_take(&snapshot);
 
-  fd = open( GPIO_PATH, O_RDWR );
-  rtems_test_assert( fd >= 0 );
+  fd = open(GPIO_PATH, O_RDWR);
+  rtems_test_assert(fd >= 0);
 
-  test_controller_info( fd );
-  test_pin_info( fd );
-  test_pin_by_name( fd );
-  test_reserved_pin_is_refused( fd );
-  test_capabilities_are_enforced( fd );
-  test_configure_and_report( fd );
-  test_rounding_is_reported( fd );
-  test_read_write( fd );
-  test_active_low( fd );
-  test_multiple( fd );
-  test_interrupts( fd );
+  test_controller_info(fd);
+  test_pin_info(fd);
+  test_pin_by_name(fd);
+  test_reserved_pin_is_refused(fd);
+  test_capabilities_are_enforced(fd);
+  test_configure_and_report(fd);
+  test_rounding_is_reported(fd);
+  test_read_write(fd);
+  test_active_low(fd);
+  test_multiple(fd);
+  test_interrupts(fd);
   test_unimplemented();
   test_registration_is_checked();
 
-  rtems_test_assert( close( fd ) == 0 );
+  rtems_test_assert(close(fd) == 0);
 
   /*
    * Covers rather more than the heap: a descriptor left open by
@@ -696,19 +614,18 @@ static void run_test( void )
    * failed to register, shows up here and in no other assertion in this
    * file.
    */
-  rtems_test_assert( rtems_resource_snapshot_check( &snapshot ) );
+  rtems_test_assert(rtems_resource_snapshot_check(&snapshot));
 }
 
-static rtems_task Init( rtems_task_argument arg )
-{
-  (void) arg;
+static rtems_task Init(rtems_task_argument arg) {
+  (void)arg;
 
   TEST_BEGIN();
 
   run_test();
 
   TEST_END();
-  rtems_test_exit( 0 );
+  rtems_test_exit(0);
 }
 
 #define CONFIGURE_APPLICATION_DOES_NOT_NEED_CLOCK_DRIVER

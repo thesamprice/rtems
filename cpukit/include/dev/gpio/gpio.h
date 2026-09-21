@@ -95,9 +95,9 @@ typedef struct rtems_gpio_drv_ctrl rtems_gpio_drv_ctrl;
  * @return Returns the number of uint32_t words a bitmap for that many pins
  *   occupies.
  */
-#define RTEMS_GPIO_BITMAP_WORDS( pin_count ) \
-  ( ( (size_t) ( pin_count ) + RTEMS_GPIO_BITMAP_WORD_BITS - 1 ) / \
-    RTEMS_GPIO_BITMAP_WORD_BITS )
+#define RTEMS_GPIO_BITMAP_WORDS(pin_count)                                     \
+  (((size_t)(pin_count) + RTEMS_GPIO_BITMAP_WORD_BITS - 1) /                   \
+   RTEMS_GPIO_BITMAP_WORD_BITS)
 
 /**
  * @brief This enumeration represents the direction of a pin.
@@ -235,83 +235,83 @@ typedef enum {
 /**
  * @brief This constant indicates that the pin can be an input.
  */
-#define RTEMS_GPIO_CAP_INPUT          ( 1u << 0 )
+#define RTEMS_GPIO_CAP_INPUT (1u << 0)
 
 /**
  * @brief This constant indicates that the pin can be an output.
  */
-#define RTEMS_GPIO_CAP_OUTPUT         ( 1u << 1 )
+#define RTEMS_GPIO_CAP_OUTPUT (1u << 1)
 
 /**
  * @brief This constant indicates that reading an output pin returns the level
  *   of the pad rather than the level last written to it.
  */
-#define RTEMS_GPIO_CAP_OUTPUT_READBACK ( 1u << 2 )
+#define RTEMS_GPIO_CAP_OUTPUT_READBACK (1u << 2)
 
 /**
  * @brief This constant indicates that the pin has a pull-up resistor.
  */
-#define RTEMS_GPIO_CAP_PULL_UP        ( 1u << 3 )
+#define RTEMS_GPIO_CAP_PULL_UP (1u << 3)
 
 /**
  * @brief This constant indicates that the pin has a pull-down resistor.
  */
-#define RTEMS_GPIO_CAP_PULL_DOWN      ( 1u << 4 )
+#define RTEMS_GPIO_CAP_PULL_DOWN (1u << 4)
 
 /**
  * @brief This constant indicates that the pin can drive open-drain.
  */
-#define RTEMS_GPIO_CAP_OPEN_DRAIN     ( 1u << 5 )
+#define RTEMS_GPIO_CAP_OPEN_DRAIN (1u << 5)
 
 /**
  * @brief This constant indicates that the pin can drive open-source.
  */
-#define RTEMS_GPIO_CAP_OPEN_SOURCE    ( 1u << 6 )
+#define RTEMS_GPIO_CAP_OPEN_SOURCE (1u << 6)
 
 /**
  * @brief This constant indicates that the pin has a selectable drive
  *   strength.
  */
-#define RTEMS_GPIO_CAP_DRIVE_STRENGTH ( 1u << 7 )
+#define RTEMS_GPIO_CAP_DRIVE_STRENGTH (1u << 7)
 
 /**
  * @brief This constant indicates that the pin has a hardware debounce filter.
  */
-#define RTEMS_GPIO_CAP_DEBOUNCE       ( 1u << 8 )
+#define RTEMS_GPIO_CAP_DEBOUNCE (1u << 8)
 
 /**
  * @brief This constant indicates that the pin can interrupt on a low to high
  *   transition.
  */
-#define RTEMS_GPIO_CAP_EDGE_RISING    ( 1u << 9 )
+#define RTEMS_GPIO_CAP_EDGE_RISING (1u << 9)
 
 /**
  * @brief This constant indicates that the pin can interrupt on a high to low
  *   transition.
  */
-#define RTEMS_GPIO_CAP_EDGE_FALLING   ( 1u << 10 )
+#define RTEMS_GPIO_CAP_EDGE_FALLING (1u << 10)
 
 /**
  * @brief This constant indicates that the pin can interrupt on a transition
  *   in either direction.
  */
-#define RTEMS_GPIO_CAP_EDGE_BOTH      ( 1u << 11 )
+#define RTEMS_GPIO_CAP_EDGE_BOTH (1u << 11)
 
 /**
  * @brief This constant indicates that the pin can interrupt while held high.
  */
-#define RTEMS_GPIO_CAP_LEVEL_HIGH     ( 1u << 12 )
+#define RTEMS_GPIO_CAP_LEVEL_HIGH (1u << 12)
 
 /**
  * @brief This constant indicates that the pin can interrupt while held low.
  */
-#define RTEMS_GPIO_CAP_LEVEL_LOW      ( 1u << 13 )
+#define RTEMS_GPIO_CAP_LEVEL_LOW (1u << 13)
 
 /**
  * @brief This constant indicates that the pin can wake the system from a low
  *   power state.
  */
-#define RTEMS_GPIO_CAP_WAKEUP         ( 1u << 14 )
+#define RTEMS_GPIO_CAP_WAKEUP (1u << 14)
 
 /** @} */
 
@@ -328,7 +328,7 @@ typedef enum {
 /**
  * @brief This constant indicates that the pin exists and is free to use.
  */
-#define RTEMS_GPIO_PIN_AVAILABLE  0u
+#define RTEMS_GPIO_PIN_AVAILABLE 0u
 
 /**
  * @brief This constant indicates that the pin must never be handed out.
@@ -338,13 +338,13 @@ typedef enum {
  * breaks the board rather than failing visibly, so rtems_gpio_pin_configure()
  * refuses it with EACCES.
  */
-#define RTEMS_GPIO_PIN_RESERVED   ( 1u << 0 )
+#define RTEMS_GPIO_PIN_RESERVED (1u << 0)
 
 /**
  * @brief This constant indicates that the pin is in use by another driver or
  *   by an earlier caller.
  */
-#define RTEMS_GPIO_PIN_IN_USE     ( 1u << 1 )
+#define RTEMS_GPIO_PIN_IN_USE (1u << 1)
 
 /**
  * @brief This constant indicates that the pin is usable, but the level held
@@ -354,7 +354,7 @@ typedef enum {
  * unavoidable on a small part, but a caller that has a choice should be able
  * to make it knowingly.
  */
-#define RTEMS_GPIO_PIN_STRAPPING  ( 1u << 2 )
+#define RTEMS_GPIO_PIN_STRAPPING (1u << 2)
 
 /**
  * @brief This constant indicates that the pin is not brought out to a pad in
@@ -362,7 +362,7 @@ typedef enum {
  *
  * The controller has it, this board cannot reach it.
  */
-#define RTEMS_GPIO_PIN_NO_PAD     ( 1u << 3 )
+#define RTEMS_GPIO_PIN_NO_PAD (1u << 3)
 
 /** @} */
 
@@ -381,13 +381,13 @@ typedef enum {
  * and the driver inverts, so that every consumer of the pin does not have to
  * agree about it separately.
  */
-#define RTEMS_GPIO_FLAG_ACTIVE_LOW ( 1u << 0 )
+#define RTEMS_GPIO_FLAG_ACTIVE_LOW (1u << 0)
 
 /**
  * @brief This constant indicates that the pin may wake the system from a low
  *   power state.
  */
-#define RTEMS_GPIO_FLAG_WAKEUP     ( 1u << 1 )
+#define RTEMS_GPIO_FLAG_WAKEUP (1u << 1)
 
 /** @} */
 
@@ -505,7 +505,7 @@ typedef struct {
    * controllers will leave it empty, but where a board has names this is what
    * lets a configuration name a pin rather than count pads.
    */
-  char name[ RTEMS_GPIO_NAME_MAX ];
+  char name[RTEMS_GPIO_NAME_MAX];
 
   /**
    * @brief This member contains what holds the pin, or an empty string.
@@ -515,7 +515,7 @@ typedef struct {
    * and EACCES because the I2C driver has the pad, which is the question
    * actually being asked when a configure is refused.
    */
-  char owner[ RTEMS_GPIO_NAME_MAX ];
+  char owner[RTEMS_GPIO_NAME_MAX];
 } rtems_gpio_pin_info;
 
 /**
@@ -538,7 +538,7 @@ typedef struct {
    * @brief This member contains what the controller calls itself, for
    *   diagnostics.
    */
-  char name[ RTEMS_GPIO_NAME_MAX ];
+  char name[RTEMS_GPIO_NAME_MAX];
 } rtems_gpio_info;
 
 /**
@@ -561,12 +561,12 @@ typedef struct {
    * pin count.  Pins from word_count * #RTEMS_GPIO_BITMAP_WORD_BITS upwards
    * are not part of the operation.
    */
-  size_t    word_count;
+  size_t word_count;
 
   /**
    * @brief This member selects the pins to act on, one bit per pin.
    */
-  uint32_t *mask;
+  uint32_t* mask;
 
   /**
    * @brief This member contains one logical level per selected pin.
@@ -575,7 +575,7 @@ typedef struct {
    * #RTEMS_GPIO_FLAG_ACTIVE_LOW applies per pin.  Bits not selected by mask
    * are ignored on a set and undefined on a get.
    */
-  uint32_t *values;
+  uint32_t* values;
 } rtems_gpio_pin_bitmap;
 
 /**
@@ -591,7 +591,7 @@ typedef struct {
  *
  * @param arg is the argument given to rtems_gpio_pin_irq_enable().
  */
-typedef void ( *rtems_gpio_irq_handler )( uint32_t pin, void *arg );
+typedef void (*rtems_gpio_irq_handler)(uint32_t pin, void* arg);
 
 /**
  * @brief This structure provides what a GPIO driver implements.
@@ -612,11 +612,8 @@ typedef struct {
    * because a caller would then have no way to find out anything about a pin
    * before configuring it.
    */
-  int ( *pin_get_info )(
-    rtems_gpio_drv_ctrl     *ctrl,
-    uint32_t             pin,
-    rtems_gpio_pin_info *info
-  );
+  int (*pin_get_info)(rtems_gpio_drv_ctrl* ctrl, uint32_t pin,
+                      rtems_gpio_pin_info* info);
 
   /**
    * @brief This member applies a configuration to a pin.
@@ -626,11 +623,8 @@ typedef struct {
    * asks for is one the pin reported.  A driver that rounds a value it cannot
    * meet exactly should write what it actually applied back into @a config.
    */
-  int ( *pin_configure )(
-    rtems_gpio_drv_ctrl   *ctrl,
-    uint32_t           pin,
-    rtems_gpio_config *config
-  );
+  int (*pin_configure)(rtems_gpio_drv_ctrl* ctrl, uint32_t pin,
+                       rtems_gpio_config* config);
 
   /**
    * @brief This member reports how a pin is configured now.
@@ -639,26 +633,23 @@ typedef struct {
    * handle the unconfigured case.  What it reports is what it applied,
    * including any value it rounded.
    */
-  int ( *pin_get_config )(
-    rtems_gpio_drv_ctrl   *ctrl,
-    uint32_t           pin,
-    rtems_gpio_config *config
-  );
+  int (*pin_get_config)(rtems_gpio_drv_ctrl* ctrl, uint32_t pin,
+                        rtems_gpio_config* config);
 
   /**
    * @brief This member returns a pin to its unconfigured state.
    */
-  int ( *pin_release )( rtems_gpio_drv_ctrl *ctrl, uint32_t pin );
+  int (*pin_release)(rtems_gpio_drv_ctrl* ctrl, uint32_t pin);
 
   /**
    * @brief This member reads a pin into @a value as a logical 0 or 1.
    */
-  int ( *pin_get )( rtems_gpio_drv_ctrl *ctrl, uint32_t pin, int *value );
+  int (*pin_get)(rtems_gpio_drv_ctrl* ctrl, uint32_t pin, int* value);
 
   /**
    * @brief This member writes a pin from @a value as a logical 0 or 1.
    */
-  int ( *pin_set )( rtems_gpio_drv_ctrl *ctrl, uint32_t pin, int value );
+  int (*pin_set)(rtems_gpio_drv_ctrl* ctrl, uint32_t pin, int value);
 
   /**
    * @brief This member inverts a pin's current level.
@@ -667,7 +658,7 @@ typedef struct {
    * access, and because a read-modify-write from the caller is not atomic
    * against another caller.
    */
-  int ( *pin_toggle )( rtems_gpio_drv_ctrl *ctrl, uint32_t pin );
+  int (*pin_toggle)(rtems_gpio_drv_ctrl* ctrl, uint32_t pin);
 
   /**
    * @brief This member reads several pins as one operation.
@@ -678,12 +669,8 @@ typedef struct {
    * caller asked for.  The bitmaps carry physical levels: the generic layer
    * applies #RTEMS_GPIO_FLAG_ACTIVE_LOW above this call.
    */
-  int ( *pin_get_multiple )(
-    rtems_gpio_drv_ctrl *ctrl,
-    const uint32_t  *mask,
-    uint32_t        *values,
-    size_t           words
-  );
+  int (*pin_get_multiple)(rtems_gpio_drv_ctrl* ctrl, const uint32_t* mask,
+                          uint32_t* values, size_t words);
 
   /**
    * @brief This member writes several pins as one operation.
@@ -691,27 +678,19 @@ typedef struct {
    * Both bitmaps are @a words words and carry physical levels, with the same
    * limit as pin_get_multiple().
    */
-  int ( *pin_set_multiple )(
-    rtems_gpio_drv_ctrl *ctrl,
-    const uint32_t  *mask,
-    const uint32_t  *values,
-    size_t           words
-  );
+  int (*pin_set_multiple)(rtems_gpio_drv_ctrl* ctrl, const uint32_t* mask,
+                          const uint32_t* values, size_t words);
 
   /**
    * @brief This member starts delivering a pin's interrupt to a handler.
    */
-  int ( *pin_irq_enable )(
-    rtems_gpio_drv_ctrl       *ctrl,
-    uint32_t               pin,
-    rtems_gpio_irq_handler handler,
-    void                  *arg
-  );
+  int (*pin_irq_enable)(rtems_gpio_drv_ctrl* ctrl, uint32_t pin,
+                        rtems_gpio_irq_handler handler, void* arg);
 
   /**
    * @brief This member stops delivering a pin's interrupt.
    */
-  int ( *pin_irq_disable )( rtems_gpio_drv_ctrl *ctrl, uint32_t pin );
+  int (*pin_irq_disable)(rtems_gpio_drv_ctrl* ctrl, uint32_t pin);
 
   /**
    * @brief This member releases whatever the driver holds.
@@ -719,7 +698,7 @@ typedef struct {
    * Called when the node is destroyed.  May be NULL for a controller whose
    * storage is static, which most are.
    */
-  void ( *destroy )( rtems_gpio_drv_ctrl *ctrl );
+  void (*destroy)(rtems_gpio_drv_ctrl* ctrl);
 } rtems_gpio_drv_handlers;
 
 /**
@@ -733,7 +712,7 @@ struct rtems_gpio_drv_ctrl {
   /**
    * @brief This member contains what the driver implements.
    */
-  const rtems_gpio_drv_handlers *handlers;
+  const rtems_gpio_drv_handlers* handlers;
 
   /**
    * @brief This member contains the number of logical pins this controller
@@ -744,7 +723,7 @@ struct rtems_gpio_drv_ctrl {
   /**
    * @brief This member contains what the controller calls itself.
    */
-  const char *name;
+  const char* name;
 
   /**
    * @brief This member is true, if an operation on this controller may
@@ -765,7 +744,7 @@ struct rtems_gpio_drv_ctrl {
    * the handlers.  A controller with no inversion register supports active
    * low for free this way.
    */
-  uint32_t *active_low;
+  uint32_t* active_low;
 
   /**
    * @brief This member contains scratch space for one bitmap.
@@ -775,7 +754,7 @@ struct rtems_gpio_drv_ctrl {
    * physical levels for a bulk write without modifying the caller's bitmap.
    * Only touched under the controller lock.
    */
-  uint32_t *scratch;
+  uint32_t* scratch;
 
   /**
    * @brief This member serialises access to the controller.
@@ -794,7 +773,7 @@ typedef struct {
   /**
    * @brief This member contains the logical pin to act on.
    */
-  uint32_t          pin;
+  uint32_t pin;
 
   /**
    * @brief This member contains the configuration of the pin.
@@ -815,7 +794,7 @@ typedef struct {
   /**
    * @brief This member contains the logical level of the pin, 0 or 1.
    */
-  int      value;
+  int value;
 } rtems_gpio_pin_value;
 
 /**
@@ -826,7 +805,7 @@ typedef struct {
   /**
    * @brief This member contains the logical pin to act on.
    */
-  uint32_t               pin;
+  uint32_t pin;
 
   /**
    * @brief This member contains the handler to call.
@@ -836,7 +815,7 @@ typedef struct {
   /**
    * @brief This member contains the argument passed to the handler.
    */
-  void                  *arg;
+  void* arg;
 } rtems_gpio_pin_irq;
 
 /**
@@ -854,7 +833,7 @@ typedef struct {
  *
  * The argument type is a pointer to rtems_gpio_info.
  */
-#define RTEMS_GPIO_IOCTL_GET_INFO _IOR( 'G', 0, rtems_gpio_info )
+#define RTEMS_GPIO_IOCTL_GET_INFO _IOR('G', 0, rtems_gpio_info)
 
 /**
  * @brief Reports a pin.
@@ -862,14 +841,14 @@ typedef struct {
  * The argument type is a pointer to rtems_gpio_pin_info, with
  * rtems_gpio_pin_info::pin set by the caller.
  */
-#define RTEMS_GPIO_IOCTL_PIN_GET_INFO _IOWR( 'G', 1, rtems_gpio_pin_info )
+#define RTEMS_GPIO_IOCTL_PIN_GET_INFO _IOWR('G', 1, rtems_gpio_pin_info)
 
 /**
  * @brief Configures a pin.
  *
  * The argument type is a pointer to rtems_gpio_pin_config.
  */
-#define RTEMS_GPIO_IOCTL_PIN_CONFIGURE _IOWR( 'G', 2, rtems_gpio_pin_config )
+#define RTEMS_GPIO_IOCTL_PIN_CONFIGURE _IOWR('G', 2, rtems_gpio_pin_config)
 
 /**
  * @brief Reports how a pin is configured.
@@ -877,65 +856,63 @@ typedef struct {
  * The argument type is a pointer to rtems_gpio_pin_config, with
  * rtems_gpio_pin_config::pin set by the caller.
  */
-#define RTEMS_GPIO_IOCTL_PIN_GET_CONFIG _IOWR( 'G', 3, rtems_gpio_pin_config )
+#define RTEMS_GPIO_IOCTL_PIN_GET_CONFIG _IOWR('G', 3, rtems_gpio_pin_config)
 
 /**
  * @brief Unconfigures a pin.
  *
  * The argument type is a pointer to uint32_t.
  */
-#define RTEMS_GPIO_IOCTL_PIN_RELEASE _IOW( 'G', 4, uint32_t )
+#define RTEMS_GPIO_IOCTL_PIN_RELEASE _IOW('G', 4, uint32_t)
 
 /**
  * @brief Reads a pin.
  *
  * The argument type is a pointer to rtems_gpio_pin_value.
  */
-#define RTEMS_GPIO_IOCTL_PIN_GET _IOWR( 'G', 5, rtems_gpio_pin_value )
+#define RTEMS_GPIO_IOCTL_PIN_GET _IOWR('G', 5, rtems_gpio_pin_value)
 
 /**
  * @brief Writes a pin.
  *
  * The argument type is a pointer to rtems_gpio_pin_value.
  */
-#define RTEMS_GPIO_IOCTL_PIN_SET _IOW( 'G', 6, rtems_gpio_pin_value )
+#define RTEMS_GPIO_IOCTL_PIN_SET _IOW('G', 6, rtems_gpio_pin_value)
 
 /**
  * @brief Inverts a pin.
  *
  * The argument type is a pointer to uint32_t.
  */
-#define RTEMS_GPIO_IOCTL_PIN_TOGGLE _IOW( 'G', 7, uint32_t )
+#define RTEMS_GPIO_IOCTL_PIN_TOGGLE _IOW('G', 7, uint32_t)
 
 /**
  * @brief Reads several pins.
  *
  * The argument type is a pointer to rtems_gpio_pin_bitmap.
  */
-#define RTEMS_GPIO_IOCTL_PIN_GET_MULTIPLE \
-  _IOWR( 'G', 8, rtems_gpio_pin_bitmap )
+#define RTEMS_GPIO_IOCTL_PIN_GET_MULTIPLE _IOWR('G', 8, rtems_gpio_pin_bitmap)
 
 /**
  * @brief Writes several pins.
  *
  * The argument type is a pointer to rtems_gpio_pin_bitmap.
  */
-#define RTEMS_GPIO_IOCTL_PIN_SET_MULTIPLE \
-  _IOW( 'G', 9, rtems_gpio_pin_bitmap )
+#define RTEMS_GPIO_IOCTL_PIN_SET_MULTIPLE _IOW('G', 9, rtems_gpio_pin_bitmap)
 
 /**
  * @brief Enables a pin's interrupt.
  *
  * The argument type is a pointer to rtems_gpio_pin_irq.
  */
-#define RTEMS_GPIO_IOCTL_PIN_IRQ_ENABLE _IOW( 'G', 10, rtems_gpio_pin_irq )
+#define RTEMS_GPIO_IOCTL_PIN_IRQ_ENABLE _IOW('G', 10, rtems_gpio_pin_irq)
 
 /**
  * @brief Disables a pin's interrupt.
  *
  * The argument type is a pointer to uint32_t.
  */
-#define RTEMS_GPIO_IOCTL_PIN_IRQ_DISABLE _IOW( 'G', 11, uint32_t )
+#define RTEMS_GPIO_IOCTL_PIN_IRQ_DISABLE _IOW('G', 11, uint32_t)
 
 /** @} */
 
@@ -960,7 +937,7 @@ typedef struct {
  * @retval EINVAL @a ctrl is NULL, has no handlers, has no pin_get_info
  *   handler, or publishes no pins.
  */
-int rtems_gpio_drv_ctrl_init( rtems_gpio_drv_ctrl *ctrl );
+int rtems_gpio_drv_ctrl_init(rtems_gpio_drv_ctrl* ctrl);
 
 /**
  * @brief Publishes a controller as a device node.
@@ -975,10 +952,7 @@ int rtems_gpio_drv_ctrl_init( rtems_gpio_drv_ctrl *ctrl );
  * @retval -1 An error occurred.  The errno is set to indicate the error and
  *   the controller's destroy handler has been called.
  */
-int rtems_gpio_drv_ctrl_register(
-  rtems_gpio_drv_ctrl *ctrl,
-  const char          *path
-);
+int rtems_gpio_drv_ctrl_register(rtems_gpio_drv_ctrl* ctrl, const char* path);
 
 /** @} */
 
@@ -1006,7 +980,7 @@ int rtems_gpio_drv_ctrl_register(
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_get_info( int fd, rtems_gpio_info *info );
+int rtems_gpio_get_info(int fd, rtems_gpio_info* info);
 
 /**
  * @brief Reports what a pin is, before anything is done to it.
@@ -1022,11 +996,7 @@ int rtems_gpio_get_info( int fd, rtems_gpio_info *info );
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_get_info(
-  int                  fd,
-  uint32_t             pin,
-  rtems_gpio_pin_info *info
-);
+int rtems_gpio_pin_get_info(int fd, uint32_t pin, rtems_gpio_pin_info* info);
 
 /**
  * @brief Finds the pin the board calls @a name.
@@ -1046,7 +1016,7 @@ int rtems_gpio_pin_get_info(
  * @retval -1 An error occurred.  The errno is set to indicate the error, and
  *   is ENOENT if no pin has that name.
  */
-int rtems_gpio_pin_by_name( int fd, const char *name, uint32_t *pin );
+int rtems_gpio_pin_by_name(int fd, const char* name, uint32_t* pin);
 
 /**
  * @brief Configures a pin.
@@ -1066,11 +1036,7 @@ int rtems_gpio_pin_by_name( int fd, const char *name, uint32_t *pin );
  *   and ENOTSUP if the configuration asks for something the pin does not
  *   report in rtems_gpio_pin_info::capabilities.
  */
-int rtems_gpio_pin_configure(
-  int                fd,
-  uint32_t           pin,
-  rtems_gpio_config *config
-);
+int rtems_gpio_pin_configure(int fd, uint32_t pin, rtems_gpio_config* config);
 
 /**
  * @brief Reports how a pin is configured now.
@@ -1091,11 +1057,8 @@ int rtems_gpio_pin_configure(
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_get_configuration(
-  int                fd,
-  uint32_t           pin,
-  rtems_gpio_config *config
-);
+int rtems_gpio_pin_get_configuration(int fd, uint32_t pin,
+                                     rtems_gpio_config* config);
 
 /**
  * @brief Returns a pin to its unconfigured state.
@@ -1107,7 +1070,7 @@ int rtems_gpio_pin_get_configuration(
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_release( int fd, uint32_t pin );
+int rtems_gpio_pin_release(int fd, uint32_t pin);
 
 /**
  * @brief Reads a pin.
@@ -1123,7 +1086,7 @@ int rtems_gpio_pin_release( int fd, uint32_t pin );
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_get( int fd, uint32_t pin, int *value );
+int rtems_gpio_pin_get(int fd, uint32_t pin, int* value);
 
 /**
  * @brief Writes a pin.
@@ -1137,7 +1100,7 @@ int rtems_gpio_pin_get( int fd, uint32_t pin, int *value );
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_set( int fd, uint32_t pin, int value );
+int rtems_gpio_pin_set(int fd, uint32_t pin, int value);
 
 /**
  * @brief Inverts a pin.
@@ -1149,7 +1112,7 @@ int rtems_gpio_pin_set( int fd, uint32_t pin, int value );
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_toggle( int fd, uint32_t pin );
+int rtems_gpio_pin_toggle(int fd, uint32_t pin);
 
 /**
  * @brief Reads several pins as one operation.
@@ -1162,7 +1125,7 @@ int rtems_gpio_pin_toggle( int fd, uint32_t pin );
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_get_multiple( int fd, rtems_gpio_pin_bitmap *list );
+int rtems_gpio_pin_get_multiple(int fd, rtems_gpio_pin_bitmap* list);
 
 /**
  * @brief Writes several pins as one operation.
@@ -1174,7 +1137,7 @@ int rtems_gpio_pin_get_multiple( int fd, rtems_gpio_pin_bitmap *list );
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_set_multiple( int fd, const rtems_gpio_pin_bitmap *list );
+int rtems_gpio_pin_set_multiple(int fd, const rtems_gpio_pin_bitmap* list);
 
 /**
  * @brief Starts delivering a pin's interrupt to a handler.
@@ -1193,12 +1156,8 @@ int rtems_gpio_pin_set_multiple( int fd, const rtems_gpio_pin_bitmap *list );
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_irq_enable(
-  int                    fd,
-  uint32_t               pin,
-  rtems_gpio_irq_handler handler,
-  void                  *arg
-);
+int rtems_gpio_pin_irq_enable(int fd, uint32_t pin,
+                              rtems_gpio_irq_handler handler, void* arg);
 
 /**
  * @brief Stops delivering a pin's interrupt.
@@ -1210,7 +1169,7 @@ int rtems_gpio_pin_irq_enable(
  * @retval 0 Successful operation.
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
-int rtems_gpio_pin_irq_disable( int fd, uint32_t pin );
+int rtems_gpio_pin_irq_disable(int fd, uint32_t pin);
 
 /** @} */
 

@@ -55,23 +55,23 @@ extern "C" {
  */
 
 /** A fully capable pin, named "LED0". */
-#define TEST_GPIO_PIN_FULL      0
+#define TEST_GPIO_PIN_FULL 0
 /** A second fully capable pin, for the operations that need two. */
-#define TEST_GPIO_PIN_FULL2     1
+#define TEST_GPIO_PIN_FULL2 1
 /** A third, so that a multiple-pin operation has something to act on. */
-#define TEST_GPIO_PIN_FULL3     2
+#define TEST_GPIO_PIN_FULL3 2
 /** Input only: no RTEMS_GPIO_CAP_OUTPUT. */
-#define TEST_GPIO_PIN_INPUT     3
+#define TEST_GPIO_PIN_INPUT 3
 /** Reserved by the board, as a flash pad would be. */
-#define TEST_GPIO_PIN_RESERVED  4
+#define TEST_GPIO_PIN_RESERVED 4
 /** Not brought out to a pad in this package. */
-#define TEST_GPIO_PIN_NO_PAD    5
+#define TEST_GPIO_PIN_NO_PAD 5
 /** A strapping pin, named "BOOT": usable, but the level at reset matters. */
 #define TEST_GPIO_PIN_STRAPPING 6
 /** A virtual pin, as an expander behind a bus would be. */
-#define TEST_GPIO_PIN_VIRTUAL   7
+#define TEST_GPIO_PIN_VIRTUAL 7
 /** A fully capable pin in the second bitmap word. */
-#define TEST_GPIO_PIN_HIGH      33
+#define TEST_GPIO_PIN_HIGH 33
 
 /**
  * @brief The only drive strength this controller has, in microamperes.
@@ -84,13 +84,13 @@ extern "C" {
 /**
  * @brief Creates the controller and registers it at @a path.
  */
-int test_gpio_register( const char *path );
+int test_gpio_register(const char* path);
 
 /**
  * @brief Registers a controller that implements pin_get_info() and nothing
  *   else, so that every other operation has to answer ENOTSUP.
  */
-int test_gpio_register_minimal( const char *path );
+int test_gpio_register_minimal(const char* path);
 
 /**
  * @brief The level on the pad, bypassing the API.
@@ -98,17 +98,17 @@ int test_gpio_register_minimal( const char *path );
  * Physical rather than logical, so a test can tell an inverted pin from a
  * pin that was written the other way round.
  */
-int test_gpio_raw_level( uint32_t pin );
+int test_gpio_raw_level(uint32_t pin);
 
 /**
  * @brief Drives a pad from outside, as a device on the board would.
  */
-void test_gpio_set_raw_level( uint32_t pin, int value );
+void test_gpio_set_raw_level(uint32_t pin, int value);
 
 /**
  * @brief Raises @a pin's interrupt, if one is enabled on it.
  */
-void test_gpio_fire_irq( uint32_t pin );
+void test_gpio_fire_irq(uint32_t pin);
 
 #ifdef __cplusplus
 }
