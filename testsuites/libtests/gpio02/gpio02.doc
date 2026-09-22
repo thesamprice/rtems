@@ -1,0 +1,108 @@
+This file describes the directives and concepts tested by this test set.
+
+test set name: gpio02
+
+directives:
+
+  rtems_gpio_virtual_register
+  rtems_gpio_virtual_raise
+
+  and, through them, the generic GPIO directives gpio01 covers:
+
+  rtems_gpio_get_info
+  rtems_gpio_pin_get_info
+  rtems_gpio_pin_by_name
+  rtems_gpio_pin_configure
+  rtems_gpio_pin_get_configuration
+  rtems_gpio_pin_release
+  rtems_gpio_pin_get
+  rtems_gpio_pin_set
+  rtems_gpio_pin_toggle
+  rtems_gpio_pin_get_multiple
+  rtems_gpio_pin_set_multiple
+  rtems_gpio_pin_irq_enable
+  rtems_gpio_pin_irq_disable
+
+concepts:
+
+  - A pin of this controller is a pair of callbacks, and a consumer drives
+    it with the ordinary directives without knowing that.
+
+  - Capabilities are per pin, not per controller: one table holds a proxy
+    pin that interrupts, a clock gate that only drives, and a readiness
+    line that only reads.
+
+  - A pin with no set callback reports no RTEMS_GPIO_CAP_OUTPUT, so an
+    output configuration on it is refused with ENOTSUP by the generic
+    layer.  Nothing in the driver has a special case for it.
+
+  - A table that claims a capability no callback backs is refused at
+    registration rather than reported with the capability dropped.
+
+  - A proxy pin forwards to a second controller through the same
+    directives an application uses.  Its callbacks may do that because the
+    second controller is a second mutex; a callback that came back to its
+    own controller would deadlock, which is why the header says so.
+
+  - Whether a call may block is the registrant's answer: the controller
+    with the proxy pin says true and the one behind it says false.
+
+  - An output whose pin does not report RTEMS_GPIO_CAP_OUTPUT_READBACK
+    reads back the last level written, and its get callback is not called.
+    One that does report it is asked every time.  So a clock gate needs no
+    get callback to be readable.
+
+  - RTEMS_GPIO_FLAG_ACTIVE_LOW is the generic layer's and the callback
+    sees the physical level, asserted against what the callback was handed
+    rather than against a second call of the API.
+
+  - rtems_gpio_virtual_raise() delivers a pin's interrupt synchronously in
+    the context that called it, including from inside a set callback,
+    which is how a software signal makes its own write the event.
+
+  - A bulk operation touches no word past the caller's word_count, and a
+    bulk write naming one pin that cannot be written writes none of them.
+
+negative control:
+
+  Each check below was run with the code it tests broken, and the line the
+  test then stopped on is recorded.  A test that has never been seen to
+  fail is not evidence that the code it covers works.
+
+    1. gpio-virtual.c, rtems_gpio_virtual_check_pin(): remove the check
+       that RTEMS_GPIO_CAP_OUTPUT has a set callback behind it.
+       -> init.c:292, reached from test_registration_is_checked().  The
+          table registered and the pin reported an output it cannot drive.
+
+    2. gpio-virtual.c, rtems_gpio_virtual_reads_shadow(): ignore
+       RTEMS_GPIO_CAP_OUTPUT_READBACK and always read the shadow.
+       -> init.c:563 "value == 1", from test_readback().  A change made
+          behind the driver went unseen on a pin that promises to see it.
+
+    3. gpio-virtual.c, rtems_gpio_virtual_pin_configure(): mark the pin in
+       use before applying the level rather than after.
+       -> init.c:273 "errno == expected_errno", from
+          test_callbacks_are_called().  A configure the set callback
+          refused left the pin in use, so the read that should have been
+          refused with EBADF was not.
+
+    4. gpio-virtual.c, rtems_gpio_virtual_pin_set_multiple(): check each
+       pin in the loop that writes it instead of in a pass before.
+       -> init.c:707 "soft_gate.sets == 0", from test_bulk().  The call
+          still returned ENOTSUP and one pin had already been written.
+
+    5. gpio-virtual.c, rtems_gpio_virtual_bitmap_pins(): walk the
+       controller's pin count instead of the caller's words.
+       -> init.c:693 "soft_high.gets == 0", from test_bulk().  A pin in
+          the second word was read from a one word bitmap.
+
+    6. gpio-virtual.c, rtems_gpio_virtual_raise(): take the handler of pin
+       0 rather than of the pin raised.
+       -> init.c:761, from test_interrupts().  The raise reported ENOENT
+          for a pin that had a handler.
+
+    7. gpio-virtual.c, rtems_gpio_virtual_write(): invert the level in the
+       driver as well as in the generic layer.
+       -> init.c:492 "soft_gate.level == 0", from
+          test_callbacks_are_called().  The callback was handed the
+          opposite of the level the caller asked for.
