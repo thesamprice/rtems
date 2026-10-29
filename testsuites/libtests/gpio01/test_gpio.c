@@ -476,6 +476,10 @@ rtems_gpio_irq_flags test_gpio_irq_flags(uint32_t pin) {
   return test_gpio_instance.pins[pin].irq_flags;
 }
 
+void test_gpio_set_can_block(bool can_block) {
+  test_gpio_instance.base.can_block = can_block;
+}
+
 void test_gpio_fire_irq(uint32_t pin) {
   test_gpio_pin_state* state = &test_gpio_instance.pins[pin];
 

@@ -867,6 +867,31 @@ typedef struct {
 } rtems_gpio_pin_irq;
 
 /**
+ * @brief This structure provides a pin resolved for use from interrupt
+ *   context.
+ *
+ * Every other call in this API is an ioctl() on a descriptor, which resolves
+ * the descriptor and obtains the controller's mutex before it dispatches.
+ * Neither is available to an interrupt handler, so a caller that has to read
+ * or write a pin from one resolves it once with rtems_gpio_pin_handle_get()
+ * and uses the result.
+ *
+ * The contents are the implementation's.  A caller stores the structure and
+ * passes its address; nothing else about it is a supported interface.
+ */
+typedef struct {
+  /**
+   * @brief This member contains the controller the pin belongs to.
+   */
+  rtems_gpio_drv_ctrl* ctrl;
+
+  /**
+   * @brief This member contains the logical pin.
+   */
+  uint32_t pin;
+} rtems_gpio_pin_handle;
+
+/**
  * @name GPIO IO Control Commands
  *
  * Every operation is one of these on the controller's node.  The
@@ -961,6 +986,13 @@ typedef struct {
  * The argument type is a pointer to uint32_t.
  */
 #define RTEMS_GPIO_IOCTL_PIN_IRQ_DISABLE _IOW('G', 11, uint32_t)
+
+/**
+ * @brief Resolves a pin for use from interrupt context.
+ *
+ * The argument type is a pointer to rtems_gpio_pin_handle.
+ */
+#define RTEMS_GPIO_IOCTL_PIN_HANDLE_GET _IOWR('G', 12, rtems_gpio_pin_handle)
 
 /** @} */
 
@@ -1227,6 +1259,77 @@ int rtems_gpio_pin_irq_enable(int fd, uint32_t pin, rtems_gpio_irq_flags flags,
  * @retval -1 An error occurred.  The errno is set to indicate the error.
  */
 int rtems_gpio_pin_irq_disable(int fd, uint32_t pin);
+
+/**
+ * @brief Resolves a pin for use from interrupt context.
+ *
+ * The calls that take a descriptor cannot be made from an interrupt handler:
+ * each resolves the descriptor through the file system and obtains the
+ * controller's mutex.  A handler that reads or writes its own pin -- to
+ * capture a level while it is still there, or to acknowledge something in
+ * hardware -- needs a path with neither.  This is how it gets one.
+ *
+ * Resolve the pin once, from task context, and keep the handle.  It stays
+ * valid until the pin is released or reconfigured.
+ *
+ * @param fd is the descriptor for the controller's device node.
+ *
+ * @param pin is the logical pin to resolve.
+ *
+ * @param[out] handle is where the resolved pin is stored.
+ *
+ * @retval 0 Successful operation.
+ * @retval -1 An error occurred.  The errno is set to indicate the error.
+ *   ENOTSUP where the controller may block, since a driver that can sleep
+ *   cannot be called from an interrupt handler whatever this API does.
+ */
+int rtems_gpio_pin_handle_get(int fd, uint32_t pin,
+                              rtems_gpio_pin_handle* handle);
+
+/**
+ * @brief Reads a resolved pin, from any context.
+ *
+ * Takes no lock, so it is callable from an interrupt handler.  It also does
+ * not check that the pin is still configured, which is the price of that: a
+ * handle used after the pin has been released reads whatever the pad now is.
+ *
+ * @param handle is the pin, from rtems_gpio_pin_handle_get().
+ *
+ * @param[out] value is where the logical level, 0 or 1, is stored.
+ *   #RTEMS_GPIO_FLAG_ACTIVE_LOW applies as it does to rtems_gpio_pin_get().
+ *
+ * @retval 0 Successful operation.
+ * @retval -1 An error occurred.  The errno is set to indicate the error.
+ */
+int rtems_gpio_pin_get_isr(const rtems_gpio_pin_handle* handle, int* value);
+
+/**
+ * @brief Writes a resolved pin, from any context.
+ *
+ * Takes no lock, with the same consequences as rtems_gpio_pin_get_isr().
+ *
+ * @param handle is the pin, from rtems_gpio_pin_handle_get().
+ *
+ * @param value is the logical level to write, 0 or 1.
+ *
+ * @retval 0 Successful operation.
+ * @retval -1 An error occurred.  The errno is set to indicate the error.
+ */
+int rtems_gpio_pin_set_isr(const rtems_gpio_pin_handle* handle, int value);
+
+/**
+ * @brief Stops delivering a resolved pin's interrupt, from any context.
+ *
+ * What lets a handler mask its own source and leave the rest of the work to
+ * a task, which is the interrupt server pattern and which
+ * rtems_gpio_pin_irq_disable() cannot do because it takes a lock.
+ *
+ * @param handle is the pin, from rtems_gpio_pin_handle_get().
+ *
+ * @retval 0 Successful operation.
+ * @retval -1 An error occurred.  The errno is set to indicate the error.
+ */
+int rtems_gpio_pin_irq_disable_isr(const rtems_gpio_pin_handle* handle);
 
 /** @} */
 

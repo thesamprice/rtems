@@ -36,6 +36,8 @@
 
 #include <dev/gpio/gpio.h>
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -139,6 +141,17 @@ void test_gpio_fire_irq(uint32_t pin);
  * @return Returns the options given to the driver's pin_irq_enable handler.
  */
 rtems_gpio_irq_flags test_gpio_irq_flags(uint32_t pin);
+
+/**
+ * @brief Declares whether the controller may block.
+ *
+ * A controller that can block is one a driver may sleep in, so there is no
+ * interrupt-safe handle for it.  Nothing else in this file needs the flag,
+ * which is why it is set rather than fixed at registration.
+ *
+ * @param can_block is true to make the controller report that it may block.
+ */
+void test_gpio_set_can_block(bool can_block);
 
 #ifdef __cplusplus
 }

@@ -475,6 +475,143 @@ static void test_irq_handler(uint32_t pin, void* arg) {
   ++test_irq_count;
 }
 
+/*
+ * The handle exists because every other call here is an ioctl() that obtains
+ * the controller lock, and an interrupt handler can do neither.  So the
+ * checks that matter are that it reaches the same pad, that it agrees with
+ * the locked path about polarity, and that it works from inside a handler --
+ * which is the only context it is for.
+ */
+static rtems_gpio_pin_handle test_handle_from_irq;
+static int test_handle_irq_level = -1;
+
+static void test_handle_irq_handler(uint32_t pin, void* arg) {
+  (void)pin;
+  (void)arg;
+
+  /* What a handler is for: capture the level while it is still there. */
+  if (rtems_gpio_pin_get_isr(&test_handle_from_irq, &test_handle_irq_level) !=
+      0) {
+    test_handle_irq_level = -1;
+  }
+}
+
+static void test_isr_handle(int fd) {
+  rtems_gpio_pin_handle handle;
+  rtems_gpio_config config;
+  int value;
+
+  memset(&config, 0, sizeof(config));
+  config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config) ==
+                    0);
+
+  rtems_test_assert(
+      rtems_gpio_pin_handle_get(fd, TEST_GPIO_PIN_FULL, &handle) == 0);
+
+  /* Against the pad, not against another API call: two matching mistakes
+   * would agree with each other. */
+  rtems_test_assert(rtems_gpio_pin_set_isr(&handle, 1) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL) == 1);
+  rtems_test_assert(rtems_gpio_pin_get_isr(&handle, &value) == 0);
+  rtems_test_assert(value == 1);
+
+  rtems_test_assert(rtems_gpio_pin_set_isr(&handle, 0) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL) == 0);
+
+  /* And the locked path sees what the unlocked one did. */
+  rtems_test_assert(rtems_gpio_pin_get(fd, TEST_GPIO_PIN_FULL, &value) == 0);
+  rtems_test_assert(value == 0);
+
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL) == 0);
+
+  /* A handle nobody resolved drives nothing. */
+  memset(&handle, 0, sizeof(handle));
+  assert_fails(rtems_gpio_pin_set_isr(&handle, 1), EINVAL);
+  assert_fails(rtems_gpio_pin_get_isr(&handle, &value), EINVAL);
+  assert_fails(rtems_gpio_pin_irq_disable_isr(&handle), EINVAL);
+  assert_fails(rtems_gpio_pin_handle_get(fd, TEST_GPIO_PIN_FULL, NULL), EINVAL);
+}
+
+static void test_isr_handle_active_low(int fd) {
+  rtems_gpio_pin_handle handle;
+  rtems_gpio_config config;
+  int value;
+
+  memset(&config, 0, sizeof(config));
+  config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
+  config.flags = RTEMS_GPIO_FLAG_ACTIVE_LOW;
+
+  rtems_test_assert(
+      rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL2, &config) == 0);
+  rtems_test_assert(
+      rtems_gpio_pin_handle_get(fd, TEST_GPIO_PIN_FULL2, &handle) == 0);
+
+  rtems_test_assert(rtems_gpio_pin_set_isr(&handle, 1) == 0);
+  rtems_test_assert(test_gpio_raw_level(TEST_GPIO_PIN_FULL2) == 0);
+  rtems_test_assert(rtems_gpio_pin_get_isr(&handle, &value) == 0);
+  rtems_test_assert(value == 1);
+
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL2) == 0);
+}
+
+static void test_isr_handle_in_handler(int fd) {
+  rtems_gpio_config config;
+
+  memset(&config, 0, sizeof(config));
+  config.direction = RTEMS_GPIO_DIRECTION_INPUT;
+  config.trigger = RTEMS_GPIO_TRIGGER_EDGE_BOTH;
+
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config) ==
+                    0);
+  rtems_test_assert(rtems_gpio_pin_handle_get(fd, TEST_GPIO_PIN_FULL,
+                                              &test_handle_from_irq) == 0);
+  rtems_test_assert(rtems_gpio_pin_irq_enable(
+                        fd, TEST_GPIO_PIN_FULL, RTEMS_GPIO_IRQ_DEFAULT,
+                        test_handle_irq_handler, NULL) == 0);
+
+  test_gpio_set_raw_level(TEST_GPIO_PIN_FULL, 1);
+  test_handle_irq_level = -1;
+  test_gpio_fire_irq(TEST_GPIO_PIN_FULL);
+  rtems_test_assert(test_handle_irq_level == 1);
+
+  test_gpio_set_raw_level(TEST_GPIO_PIN_FULL, 0);
+  test_handle_irq_level = -1;
+  test_gpio_fire_irq(TEST_GPIO_PIN_FULL);
+  rtems_test_assert(test_handle_irq_level == 0);
+
+  /* Masking from the handler is the other half of why the handle exists. */
+  rtems_test_assert(rtems_gpio_pin_irq_disable_isr(&test_handle_from_irq) == 0);
+
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL) == 0);
+}
+
+static void test_isr_handle_refused_when_blocking(int fd) {
+  rtems_gpio_pin_handle handle;
+  rtems_gpio_config config;
+
+  memset(&config, 0, sizeof(config));
+  config.direction = RTEMS_GPIO_DIRECTION_OUTPUT;
+  rtems_test_assert(rtems_gpio_pin_configure(fd, TEST_GPIO_PIN_FULL, &config) ==
+                    0);
+
+  /*
+   * A driver that may sleep cannot be called from an interrupt handler
+   * whatever this API does, so there is no handle for one.  Refusing here is
+   * the only chance to say so: the calls that take a handle report nothing
+   * about the controller.
+   */
+  test_gpio_set_can_block(true);
+  assert_fails(rtems_gpio_pin_handle_get(fd, TEST_GPIO_PIN_FULL, &handle),
+               ENOTSUP);
+  test_gpio_set_can_block(false);
+
+  rtems_test_assert(
+      rtems_gpio_pin_handle_get(fd, TEST_GPIO_PIN_FULL, &handle) == 0);
+
+  rtems_test_assert(rtems_gpio_pin_release(fd, TEST_GPIO_PIN_FULL) == 0);
+}
+
 static void test_interrupts(int fd) {
   rtems_gpio_config config;
   int token = 0;
@@ -833,6 +970,10 @@ static void run_test(void) {
   test_every_capability_arm(fd);
   test_driver_failure_is_unwound(fd);
   test_interrupts(fd);
+  test_isr_handle(fd);
+  test_isr_handle_active_low(fd);
+  test_isr_handle_in_handler(fd);
+  test_isr_handle_refused_when_blocking(fd);
   test_unimplemented();
   test_registration_is_checked();
 

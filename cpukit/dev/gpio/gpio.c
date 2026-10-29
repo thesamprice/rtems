@@ -605,6 +605,27 @@ static int rtems_gpio_ioctl(rtems_libio_t* iop, ioctl_command_t command,
     break;
   }
 
+  case RTEMS_GPIO_IOCTL_PIN_HANDLE_GET: {
+    rtems_gpio_pin_handle* handle = arg;
+
+    /*
+     * A controller that may block cannot be driven from an interrupt
+     * handler, so there is no handle to give out for one.  Saying so here is
+     * the only place a caller can be told: by the time it has a handle the
+     * calls take no lock and report nothing.
+     */
+    if (ctrl->can_block) {
+      err = ENOTSUP;
+      break;
+    }
+
+    err = rtems_gpio_check_configured(ctrl, handle->pin);
+    if (err == 0) {
+      handle->ctrl = ctrl;
+    }
+    break;
+  }
+
   case RTEMS_GPIO_IOCTL_PIN_IRQ_DISABLE: {
     uint32_t pin = *(const uint32_t*)arg;
 
@@ -873,4 +894,110 @@ int rtems_gpio_pin_irq_enable(int fd, uint32_t pin, rtems_gpio_irq_flags flags,
 
 int rtems_gpio_pin_irq_disable(int fd, uint32_t pin) {
   return ioctl(fd, RTEMS_GPIO_IOCTL_PIN_IRQ_DISABLE, &pin);
+}
+
+int rtems_gpio_pin_handle_get(int fd, uint32_t pin,
+                              rtems_gpio_pin_handle* handle) {
+  if (handle == NULL) {
+    rtems_set_errno_and_return_minus_one(EINVAL);
+  }
+
+  handle->ctrl = NULL;
+  handle->pin = pin;
+
+  return ioctl(fd, RTEMS_GPIO_IOCTL_PIN_HANDLE_GET, handle);
+}
+
+/*
+ * Below here nothing obtains ctrl->mutex and nothing calls
+ * rtems_gpio_check_configured(), because both are what makes the ordinary
+ * calls unusable from an interrupt handler.  What is left is a driver call
+ * and the polarity bit, and the driver handlers of a controller that cannot
+ * block are plain register accesses.
+ *
+ * Reading ctrl->active_low without the lock is a word load of a bitmap only
+ * pin_configure() and pin_release() write, so a handler racing a
+ * reconfiguration of its own pin sees one polarity or the other and never a
+ * torn value.  A caller that reconfigures a pin underneath its own interrupt
+ * handler has a problem this API cannot solve for it.
+ */
+
+static int rtems_gpio_handle_check(const rtems_gpio_pin_handle* handle) {
+  if (handle == NULL || handle->ctrl == NULL) {
+    rtems_set_errno_and_return_minus_one(EINVAL);
+  }
+
+  return 0;
+}
+
+int rtems_gpio_pin_get_isr(const rtems_gpio_pin_handle* handle, int* value) {
+  rtems_gpio_drv_ctrl* ctrl;
+  int physical;
+  int err;
+
+  if (rtems_gpio_handle_check(handle) != 0 || value == NULL) {
+    rtems_set_errno_and_return_minus_one(EINVAL);
+  }
+
+  ctrl = handle->ctrl;
+
+  if (ctrl->handlers->pin_get == NULL) {
+    rtems_set_errno_and_return_minus_one(ENOTSUP);
+  }
+
+  err = (*ctrl->handlers->pin_get)(ctrl, handle->pin, &physical);
+  if (err != 0) {
+    rtems_set_errno_and_return_minus_one(err);
+  }
+
+  /* The mapping is its own inverse, so one helper serves both directions. */
+  *value = rtems_gpio_to_physical(ctrl, handle->pin, physical);
+
+  return 0;
+}
+
+int rtems_gpio_pin_set_isr(const rtems_gpio_pin_handle* handle, int value) {
+  rtems_gpio_drv_ctrl* ctrl;
+  int err;
+
+  if (rtems_gpio_handle_check(handle) != 0) {
+    return -1;
+  }
+
+  ctrl = handle->ctrl;
+
+  if (ctrl->handlers->pin_set == NULL) {
+    rtems_set_errno_and_return_minus_one(ENOTSUP);
+  }
+
+  err = (*ctrl->handlers->pin_set)(ctrl, handle->pin,
+                                   rtems_gpio_to_physical(ctrl, handle->pin,
+                                                          value));
+  if (err != 0) {
+    rtems_set_errno_and_return_minus_one(err);
+  }
+
+  return 0;
+}
+
+int rtems_gpio_pin_irq_disable_isr(const rtems_gpio_pin_handle* handle) {
+  rtems_gpio_drv_ctrl* ctrl;
+  int err;
+
+  if (rtems_gpio_handle_check(handle) != 0) {
+    return -1;
+  }
+
+  ctrl = handle->ctrl;
+
+  if (ctrl->handlers->pin_irq_disable == NULL) {
+    rtems_set_errno_and_return_minus_one(ENOTSUP);
+  }
+
+  err = (*ctrl->handlers->pin_irq_disable)(ctrl, handle->pin);
+  if (err != 0) {
+    rtems_set_errno_and_return_minus_one(err);
+  }
+
+  return 0;
 }
