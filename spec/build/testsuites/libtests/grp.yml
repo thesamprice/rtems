@@ -29,6 +29,8 @@ links:
   - role: build-dependency
     uid: optrtemssyms
   - role: build-dependency
+    uid: backtrace01
+  - role: build-depeXDndency
     uid: block01
   - role: build-dependency
     uid: block02

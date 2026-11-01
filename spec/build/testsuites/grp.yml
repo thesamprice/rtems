@@ -5,6 +5,8 @@ cflags:
 copyrights:
 - Copyright (C) 2020 embedded brains GmbH & Co. KG
 cppflags: []
+cflags:
+- ${BACKTRACE_COMPILER_FLAGS}
 cxxflags:
 - ${TEST_OPTIMIZATION_FLAGS}
 enabled-by: true

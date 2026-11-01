@@ -22,6 +22,8 @@ links:
 - role: build-dependency
   uid: optstdcc
 - role: build-dependency
+  uid: optbacktrace
+- role: build-dependency
   uid: optwarn
 - role: build-dependency
   uid: optwarncc
@@ -91,6 +93,8 @@ links:
   uid: optnocoverageldflags
 - role: build-dependency
   uid: optversion
+- role: build-dependency
+  uid: optunwindcflags
 - role: build-dependency
   uid: optjffs2summary
 target: cpukit/include/rtems/score/cpuopts.h
