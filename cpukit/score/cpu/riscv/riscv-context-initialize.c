@@ -46,6 +46,8 @@
 #include <rtems/score/address.h>
 #include <rtems/score/tls.h>
 
+void _RISCV_Thread_start( void );
+
 void _CPU_Context_Initialize(
   Context_Control *context,
   void            *stack_area_begin,
@@ -64,7 +66,8 @@ void _CPU_Context_Initialize(
   stack = _Addresses_Add_offset( stack_area_begin, stack_area_size );
   stack = _Addresses_Align_down( stack, CPU_STACK_ALIGNMENT );
 
-  context->ra = (uintptr_t) entry_point;
+  context->ra = (uintptr_t) _RISCV_Thread_start;
+  context->s1 = (uintptr_t) entry_point;
   context->sp = (uintptr_t) stack;
   context->isr_dispatch_disable = 0;
 
