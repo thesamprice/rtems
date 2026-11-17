@@ -212,3 +212,19 @@ SYM(_RISCV_Start_multitasking):
 
 	j	.Ltry_update_is_executing
 #endif
+
+/*
+ * The first code a new thread runs.  _CPU_Context_Initialize() puts the
+ * thread entry point in s1.  Clear ra before entering it, so the entry
+ * point saves a zero return address and an unwinder walking the thread's
+ * stack stops there.  With ra pointing at the entry point itself the
+ * unwinder finds the same frame again and loops forever.
+ */
+	.align	2
+PUBLIC(_RISCV_Thread_start)
+SYM(_RISCV_Thread_start):
+	.cfi_startproc
+	.cfi_undefined	ra
+	li	ra, 0
+	jr	s1
+	.cfi_endproc
