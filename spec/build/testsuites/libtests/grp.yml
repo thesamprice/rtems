@@ -30,7 +30,7 @@ links:
     uid: optrtemssyms
   - role: build-dependency
     uid: backtrace01
-  - role: build-depeXDndency
+  - role: build-dependency
     uid: block01
   - role: build-dependency
     uid: block02

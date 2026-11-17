@@ -5,6 +5,7 @@
  * is freely granted, provided that this notice is preserved.
  */
 
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -91,7 +92,7 @@ int call2(int a1, int a2) {
        off = bt.calls[i] - calls[found].call;
        calls[found].called = true;
      }
-     printf(" %2zu %lx %s + %zu\n", i, bt.calls[i], sym, off);
+     printf(" %2zu %" PRIxPTR " %s + %zu\n", i, bt.calls[i], sym, off);
   }
   for (size_t j = 0; j < calls_size; ++j) {
     rtems_test_assert(calls[j].called);
