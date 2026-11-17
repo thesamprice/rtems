@@ -841,6 +841,15 @@ rtems_status_code rtems_termios_ioctl( void *arg )
     case TIOCSETA:
     case TIOCSETAW:
     case TIOCSETAF:
+      /*
+       * B0 requests a hangup, which is not supported by this
+       * termios device configuration interface.
+       */
+      if ( cfgetospeed( (struct termios *) args->buffer ) == B0 ) {
+        args->ioctl_return = -1;
+        errno = ENOTSUP;
+        break;
+      }
       tty->termios = *(struct termios *) args->buffer;
 
       if ( args->command == TIOCSETAW || args->command == TIOCSETAF ) {
@@ -927,22 +936,22 @@ rtems_status_code rtems_termios_ioctl( void *arg )
       break;
 
       /*
-     * FIXME: add various ioctl code handlers
-     */
+       * FIXME: add various ioctl code handlers
+       */
 
 #if 1 /* FIXME */
     case TIOCSETD:
       /*
-     * close old line discipline
-     */
+       * close old line discipline
+       */
       if ( rtems_termios_linesw[ tty->t_line ].l_close != NULL ) {
         sc = rtems_termios_linesw[ tty->t_line ].l_close( tty );
       }
       tty->t_line = *(int *) ( args->buffer );
       tty->t_sc = NULL; /* ensure that no more valid data */
       /*
-     * open new line discipline
-     */
+       * open new line discipline
+       */
       if ( rtems_termios_linesw[ tty->t_line ].l_open != NULL ) {
         sc = rtems_termios_linesw[ tty->t_line ].l_open( tty );
       }

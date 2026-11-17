@@ -9,6 +9,10 @@ build-type: option
 copyrights:
 - Copyright (C) 2020 embedded brains GmbH & Co. KG
 default:
+- enabled-by: riscv/gr765
+  value: 0x80000000
+- enabled-by: riscv/gr801
+  value: 0x00800000
 - enabled-by:
   - riscv/beaglevfire
   - riscv/frdme310arty
@@ -18,6 +22,10 @@ default:
   value: 0x01000000
 - enabled-by: riscv/kendrytek210
   value: 0x00600000
+- enabled-by:
+  - riscv/mbv
+  - riscv/mbv64
+  value: 0x10000000
 - enabled-by: true
   value: 0x04000000
 description: ''

@@ -97,14 +97,6 @@
 #else
 #endif
 
-/*
-#if ( CPU_HARDWARE_FP == TRUE )
-#warning CPU_HARDWARE_FP == TRUE
-#else
-#warning CPU_HARDWARE_FP != TRUE
-#endif
-*/
-
 
 /* enable debugging shadow writes to misc ram, this is a vestigal
 * Mongoose-ism debug tool- but may be handy in the future so we
@@ -113,7 +105,6 @@
 
 /* #define INSTRUMENT_ISR_VECTORING */
 /* #define INSTRUMENT_EXECUTING_THREAD */
-
 
 
 /*  Ifdefs prevent the duplication of code for MIPS ISA Level 3 ( R4xxx )
@@ -189,6 +180,21 @@
 #define RA_OFFSET 10
 #define C0_SR_OFFSET 11
 #define C0_EPC_OFFSET 12
+#if ( MIPS_HAS_FPU == 1 )
+#define F20_OFFSET 13
+#define F21_OFFSET 14
+#define F22_OFFSET 15
+#define F23_OFFSET 16
+#define F24_OFFSET 17
+#define F25_OFFSET 18
+#define F26_OFFSET 19
+#define F27_OFFSET 20
+#define F28_OFFSET 21
+#define F29_OFFSET 22
+#define F30_OFFSET 23
+#define F31_OFFSET 24
+#define FCR31_OFFSET 25
+#endif
 
 /* NOTE: these constants must match the Context_Control_fp structure in cpu.h */
 #define FP0_OFFSET  0
@@ -246,43 +252,11 @@ ASM_EXTERN(__exceptionStackFrame, SZ_INT)
  * );
  */
 
-#if ( CPU_HARDWARE_FP == TRUE )
-FRAME(_CPU_Context_save_fp,sp,0,ra)
+#if ( MIPS_HAS_FPU == 1 )
+FRAME(_CPU_Context_save_fp_from_exception,sp,0,ra)
         .set noreorder
         .set noat
 
-	/*
-	** Make sure the FPU is on before we save state.  This code
-	** is here because the FPU context switch might occur when an
-	** integer task is switching out with a FP task switching in.
-	*/
-	mfc0	t0,C0_SR
-	li	t2,SR_CU1
-	move	t1,t0
-	or	t0,t2		/* turn on the fpu */
-#if (__mips == 3) || (__mips == 32)
-	li	t2,SR_IE
-#elif __mips == 1
-	li	t2,SR_IEC
-#endif
-	not	t2
-	and	t0,t2		/* turn off interrupts */
-	mtc0	t0,C0_SR
-
-	lw	a1,(a0)		/* get address of context storage area */
-	move	t0,ra
-	jal	_CPU_Context_save_fp_from_exception
-	NOP
-
-	/*
-	** Reassert the task's state because we've not saved it yet.
-	*/
-	mtc0	t1,C0_SR
-	j	t0
-	NOP
-
-	.globl _CPU_Context_save_fp_from_exception
-_CPU_Context_save_fp_from_exception:
         STREGC1 $f0,FP0_OFFSET*F_SZ(a1)
         STREGC1 $f1,FP1_OFFSET*F_SZ(a1)
         STREGC1 $f2,FP2_OFFSET*F_SZ(a1)
@@ -324,7 +298,7 @@ _CPU_Context_save_fp_from_exception:
         j ra
         NOP
         .set at
-ENDFRAME(_CPU_Context_save_fp)
+ENDFRAME(_CPU_Context_save_fp_from_exception)
 #endif
 
 /*
@@ -345,44 +319,11 @@ ENDFRAME(_CPU_Context_save_fp)
  * )
  */
 
-#if ( CPU_HARDWARE_FP == TRUE )
-FRAME(_CPU_Context_restore_fp,sp,0,ra)
-        .set noat
+#if ( MIPS_HAS_FPU == 1 )
+FRAME(_CPU_Context_restore_fp_from_exception,sp,0,ra)
         .set noreorder
+        .set noat
 
-	/*
-	** Make sure the FPU is on before we retrieve state.  This code
-	** is here because the FPU context switch might occur when an
-	** integer task is switching out with a FP task switching in.
-	*/
-	mfc0	t0,C0_SR
-	li	t2,SR_CU1
-	move	t1,t0
-	or	t0,t2		/* turn on the fpu */
-#if (__mips == 3) || (__mips == 32)
-	li	t2,SR_IE
-#elif __mips == 1
-	li	t2,SR_IEC
-#endif
-	not	t2
-	and	t0,t2		/* turn off interrupts */
-	mtc0	t0,C0_SR
-
-	lw	a1,(a0)		/* get address of context storage area */
-	move	t0,ra
-	jal	_CPU_Context_restore_fp_from_exception
-	NOP
-
-	/*
-	** Reassert the old task's state because we've not restored the
-	** new one yet.
-	*/
-	mtc0	t1,C0_SR
-	j	t0
-	NOP
-
-	.globl _CPU_Context_restore_fp_from_exception
-_CPU_Context_restore_fp_from_exception:
         LDREGC1 $f0,FP0_OFFSET*F_SZ(a1)
         LDREGC1 $f1,FP1_OFFSET*F_SZ(a1)
         LDREGC1 $f2,FP2_OFFSET*F_SZ(a1)
@@ -426,7 +367,7 @@ _CPU_Context_restore_fp_from_exception:
         j ra
         NOP
         .set at
-ENDFRAME(_CPU_Context_restore_fp)
+ENDFRAME(_CPU_Context_restore_fp_from_exception)
 #endif
 
 /*  _CPU_Context_switch
@@ -467,12 +408,30 @@ FRAME(_CPU_Context_switch,sp,0,ra)
         STREG s6,S6_OFFSET*R_SZ(a0)
         STREG s7,S7_OFFSET*R_SZ(a0)
 
+#if ( MIPS_HAS_FPU == 1 )
+	STREGC1	$f20,F20_OFFSET*R_SZ(a0)
+	STREGC1	$f21,F21_OFFSET*R_SZ(a0)
+	STREGC1	$f22,F22_OFFSET*R_SZ(a0)
+	STREGC1	$f23,F23_OFFSET*R_SZ(a0)
+	STREGC1	$f24,F24_OFFSET*R_SZ(a0)
+	STREGC1	$f25,F25_OFFSET*R_SZ(a0)
+	STREGC1	$f26,F26_OFFSET*R_SZ(a0)
+	STREGC1	$f27,F27_OFFSET*R_SZ(a0)
+	STREGC1	$f28,F28_OFFSET*R_SZ(a0)
+	STREGC1	$f29,F29_OFFSET*R_SZ(a0)
+	STREGC1	$f30,F30_OFFSET*R_SZ(a0)
+	STREGC1	$f31,F31_OFFSET*R_SZ(a0)
+	cfc1	t0,$31
+	cfc1	t0,$31			/* two reads clear the pipeline */
+	NOP
+	STREG	t0,FCR31_OFFSET*R_SZ(a0)
+#endif
+
 
 	/*
 	** this code grabs the userspace EPC if we're dispatching from
 	** an interrupt frame or supplies the address of the dispatch
-	** routines if not.  This is entirely for the gdbstub's benefit so
-	** it can know where each task is running.
+	** routines if not, so the context records where each task runs.
 	**
 	** Its value is only set when calling threadDispatch from
 	** the interrupt handler and is cleared immediately when this
@@ -508,6 +467,25 @@ _CPU_Context_switch_restore:
         LDREG s5,S5_OFFSET*R_SZ(a1)
         LDREG s6,S6_OFFSET*R_SZ(a1)
         LDREG s7,S7_OFFSET*R_SZ(a1)
+
+#if ( MIPS_HAS_FPU == 1 )
+	LDREGC1	$f20,F20_OFFSET*R_SZ(a1)
+	LDREGC1	$f21,F21_OFFSET*R_SZ(a1)
+	LDREGC1	$f22,F22_OFFSET*R_SZ(a1)
+	LDREGC1	$f23,F23_OFFSET*R_SZ(a1)
+	LDREGC1	$f24,F24_OFFSET*R_SZ(a1)
+	LDREGC1	$f25,F25_OFFSET*R_SZ(a1)
+	LDREGC1	$f26,F26_OFFSET*R_SZ(a1)
+	LDREGC1	$f27,F27_OFFSET*R_SZ(a1)
+	LDREGC1	$f28,F28_OFFSET*R_SZ(a1)
+	LDREGC1	$f29,F29_OFFSET*R_SZ(a1)
+	LDREGC1	$f30,F30_OFFSET*R_SZ(a1)
+	LDREGC1	$f31,F31_OFFSET*R_SZ(a1)
+	LDREG	t0,FCR31_OFFSET*R_SZ(a1)
+	NOP
+	ctc1	t0,$31
+	NOP
+#endif
 
         LDREG t0, C0_SR_OFFSET*R_SZ(a1)
 
@@ -553,7 +531,12 @@ _CPU_Context_switch_restore:
 ** cpu.h task initialization code that will be affected.
 */
 
-	li	t2,SR_CU1
+	/*
+	** The coprocessor enable of the floating point unit is global state,
+	** so the context of a task carries the interrupt enable alone.  cpu.h
+	** states the invariant.
+	*/
+	li	t2,0
 
 	/* int enable bits */
 #if (__mips == 3) || (__mips == 32)
@@ -701,6 +684,38 @@ FRAME(_ISR_Handler,sp,0,ra)
 	sw t2, 0x8001FFF0
 #endif
 
+#if ( MIPS_HAS_FPU == 1 )
+        /*
+         * The interrupted context owns the call-used floating point
+         * registers.  The exception path saves the call-saved registers as
+         * well, so it needs none of these stores again.
+         */
+        STREGC1  $f0,R_F0*R_SZ(sp)
+        STREGC1  $f1,R_F1*R_SZ(sp)
+        STREGC1  $f2,R_F2*R_SZ(sp)
+        STREGC1  $f3,R_F3*R_SZ(sp)
+        STREGC1  $f4,R_F4*R_SZ(sp)
+        STREGC1  $f5,R_F5*R_SZ(sp)
+        STREGC1  $f6,R_F6*R_SZ(sp)
+        STREGC1  $f7,R_F7*R_SZ(sp)
+        STREGC1  $f8,R_F8*R_SZ(sp)
+        STREGC1  $f9,R_F9*R_SZ(sp)
+        STREGC1  $f10,R_F10*R_SZ(sp)
+        STREGC1  $f11,R_F11*R_SZ(sp)
+        STREGC1  $f12,R_F12*R_SZ(sp)
+        STREGC1  $f13,R_F13*R_SZ(sp)
+        STREGC1  $f14,R_F14*R_SZ(sp)
+        STREGC1  $f15,R_F15*R_SZ(sp)
+        STREGC1  $f16,R_F16*R_SZ(sp)
+        STREGC1  $f17,R_F17*R_SZ(sp)
+        STREGC1  $f18,R_F18*R_SZ(sp)
+        STREGC1  $f19,R_F19*R_SZ(sp)
+        cfc1     t1,$31
+        cfc1     t1,$31                  /* two reads clear the pipeline */
+        NOP
+        STREG    t1,R_FCSR*R_SZ(sp)
+#endif
+
 	/* determine if an interrupt generated this exception */
 
         mfc0     t0,C0_CAUSE
@@ -716,8 +731,6 @@ _ISR_Handler_Exception:
          *  bad is going on and we can continue to run normally.
          *  But we want to save the entire CPU context so exception
          *  handlers can look at it and change it.
-         *
-         *  NOTE: This is the path the debugger stub will take.
          */
 
 	/* already got t0 = cause in the interrupt test above */
@@ -748,23 +761,14 @@ _ISR_Handler_Exception:
 #endif
         STREG    t1,R_BADVADDR*R_SZ(sp)
 
-#if ( CPU_HARDWARE_FP == TRUE )
-        mfc0     t0,C0_SR                 /* FPU is enabled, save state */
-	NOP
-        srl      t0,t0,16
-        andi     t0,t0,(SR_CU1 >> 16)
-        beqz     t0, 1f
-        NOP
-
+#if ( MIPS_HAS_FPU == 1 )
+        /*
+         * The prologue above stores the control and status register of
+         * coprocessor 1, so the frame carries it already.
+         */
         la       a1,R_F0*R_SZ(sp)
         jal      _CPU_Context_save_fp_from_exception
         NOP
-        mfc1     t0,C1_REVISION
-        mfc1     t1,C1_STATUS
-        STREG    t0,R_FEIR*R_SZ(sp)
-        STREG    t1,R_FCSR*R_SZ(sp)
-
-1:
 #endif
 
 	move	 a0,sp
@@ -778,84 +782,17 @@ _ISR_Handler_Exception:
 	** this is not done, we might get stuck in an infinite loop because
 	** we'll return to the instruction where the exception occurred and
 	** it could throw again.
-	**
-	** It is expected the only code using the exception processing is
-	** either the gdb stub or some user code which is either going to
-	** panic or do something useful.  Regardless, it is up to each
-	** exception routine to properly adjust EPC, so the code below
-	** may be helpful for doing just that.
 	*/
 
-/* *********************************************************************
-** this code follows the R3000's exception return logic, but is not
-** needed because the gdb stub does it for us.  It might be useful
-** for something else at some point...
-**
-	* compute the address of the instruction we'll return to *
 
-	LDREG	t1, R_CAUSE*R_SZ(sp)
-	LDREG	t0, R_EPC*R_SZ(sp)
-
-	* first see if the exception happened in the delay slot *
-	li	t3,CAUSE_BD
-	AND	t4,t1,t3
-	beqz	t4,excnodelay
-	NOP
-
-	* it did, now see if the branch occurred or not *
-	li	t3,CAUSE_BT
-	AND	t4,t1,t3
-	beqz	t4,excnobranch
-	NOP
-
-	* branch was taken, we resume at the branch target *
-	LDREG	t0, R_TAR*R_SZ(sp)
-	j	excreturn
-	NOP
-
-excnobranch:
-	ADDU	t0,R_SZ
-
-excnodelay:
-	ADDU	t0,R_SZ
-
-excreturn:
-	STREG	t0, R_EPC*R_SZ(sp)
-	NOP
-********************************************************************* */
-
-
- /* if we're returning into mips_break, move to the next instruction */
-
-        LDREG	t0,R_EPC*R_SZ(sp)
-	la	t1,mips_break
-	xor	t2,t0,t1
-	bnez	t2,3f
-
-	addu	t0,R_SZ
-	STREG	t0,R_EPC*R_SZ(sp)
-	NOP
-3:
-
-
-
-
-#if ( CPU_HARDWARE_FP == TRUE )
-        mfc0     t0,C0_SR               /* FPU is enabled, restore state */
-	NOP
-        srl      t0,t0,16
-        andi     t0,t0,(SR_CU1 >> 16)
-        beqz     t0, 2f
-        NOP
-
+#if ( MIPS_HAS_FPU == 1 )
+        /*
+         * The exit below restores the control and status register of
+         * coprocessor 1 from the frame.
+         */
         la       a1,R_F0*R_SZ(sp)
         jal      _CPU_Context_restore_fp_from_exception
         NOP
-        LDREG    t0,R_FEIR*R_SZ(sp)
-        LDREG    t1,R_FCSR*R_SZ(sp)
-        mtc1     t0,C1_REVISION
-        mtc1     t1,C1_STATUS
-2:
 #endif
         LDREG    s0,R_S0*R_SZ(sp)    /* restore s0 - s7 */
         LDREG    s1,R_S1*R_SZ(sp)
@@ -871,11 +808,11 @@ excreturn:
 
 	/*
 	** Jump all the way out.  If theres a pending interrupt, just
-	** let it be serviced later.  Since we're probably using the
-	** gdb stub, we've already disrupted the ISR service timing
-	** anyhow.  We oughtn't mix exception and interrupt processing
-	** in the same exception call in case the exception stuff
-	** might interfere with the dispatching & timer ticks.
+	** let it be serviced later.  An exception handler has already
+	** disrupted the ISR service timing anyhow.  We oughtn't mix
+	** exception and interrupt processing in the same exception call
+	** in case the exception stuff might interfere with the
+	** dispatching & timer ticks.
 	*/
 	j	 _ISR_Handler_exit
 	NOP
@@ -975,7 +912,6 @@ _ISR_Handler_1:
         NOP
 
 
-
 #ifdef INSTRUMENT_EXECUTING_THREAD
 	lw	t0,THREAD_EXECUTING
 	NOP
@@ -1062,10 +998,6 @@ _ISR_Handler_1:
 #endif
 
 
-
-
-
-
 #ifdef INSTRUMENT_EXECUTING_THREAD
 	lw	t0,THREAD_EXECUTING
 	NOP
@@ -1083,12 +1015,55 @@ _ISR_Handler_1:
    */
 
 _ISR_Handler_exit:
-/*
-** Skip the SR restore because its a global register. _CPU_Context_switch_restore
-** adjusts it according to each task's configuration.  If we didn't dispatch, the
-** SR value isn't changed, so all we need to do is return.
-**
-*/
+
+#if ( MIPS_HAS_FPU == 1 )
+        LDREG    t0,R_FCSR*R_SZ(sp)
+        NOP
+        ctc1     t0,$31
+        NOP
+        LDREGC1  $f0,R_F0*R_SZ(sp)
+        LDREGC1  $f1,R_F1*R_SZ(sp)
+        LDREGC1  $f2,R_F2*R_SZ(sp)
+        LDREGC1  $f3,R_F3*R_SZ(sp)
+        LDREGC1  $f4,R_F4*R_SZ(sp)
+        LDREGC1  $f5,R_F5*R_SZ(sp)
+        LDREGC1  $f6,R_F6*R_SZ(sp)
+        LDREGC1  $f7,R_F7*R_SZ(sp)
+        LDREGC1  $f8,R_F8*R_SZ(sp)
+        LDREGC1  $f9,R_F9*R_SZ(sp)
+        LDREGC1  $f10,R_F10*R_SZ(sp)
+        LDREGC1  $f11,R_F11*R_SZ(sp)
+        LDREGC1  $f12,R_F12*R_SZ(sp)
+        LDREGC1  $f13,R_F13*R_SZ(sp)
+        LDREGC1  $f14,R_F14*R_SZ(sp)
+        LDREGC1  $f15,R_F15*R_SZ(sp)
+        LDREGC1  $f16,R_F16*R_SZ(sp)
+        LDREGC1  $f17,R_F17*R_SZ(sp)
+        LDREGC1  $f18,R_F18*R_SZ(sp)
+        LDREGC1  $f19,R_F19*R_SZ(sp)
+#endif
+
+#if (__mips == 3) || (__mips == 32)
+	/*
+	** The exit returns to the interrupted context, so the status register
+	** and the exception program counter of the frame reach the control
+	** registers here.  A handler may change either one.  An extension
+	** which leaves a fatal error with a longjmp() keeps the interrupt
+	** enable which _Terminate() cleared, and the emulation of an
+	** instruction advances the counter past it.  The eret needs the
+	** exception level, which it clears again.
+	*/
+	LDREG	k0,R_SR*R_SZ(sp)
+	NOP
+	or	k0,SR_EXL
+	mtc0	k0,C0_SR
+	NOP
+	LDREG	k0,R_EPC*R_SZ(sp)
+	NOP
+	MTCO	k0,C0_EPC
+	NOP
+#endif
+
 	/* restore context from stack */
 
 #ifdef INSTRUMENT_EXECUTING_THREAD
@@ -1142,13 +1117,4 @@ _ISR_Handler_exit:
        .set    reorder
 ENDFRAME(_ISR_Handler)
 
-
-FRAME(mips_break,sp,0,ra)
-        .set noreorder
-	break	0x0	/* this statement must be first in this function, assumed so by mips-stub.c */
-	NOP
-        j	ra
-        NOP
-       .set    reorder
-ENDFRAME(mips_break)
 

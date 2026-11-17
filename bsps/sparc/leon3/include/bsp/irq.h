@@ -42,26 +42,142 @@
 
 #define BSP_INTERRUPT_VECTOR_MAX_STD 15 /* Standard IRQ controller */
 #define BSP_INTERRUPT_VECTOR_MAX_EXT 31 /* Extended IRQ controller */
-#define BSP_INTERRUPT_VECTOR_MAX_MAP 63 /* Extended IRQ controller with mapping registers */
 
+#if LEON3_IRQMAP_BUS_LINE_COUNT != 0
+/*
+ * A bus line is an interrupt line of the system interrupt bus.  A controller
+ * line is an interrupt line of the IRQ(A)MP.  With an interrupt map, an
+ * interrupt vector is a bus line.  The dispatch table has one entry for each
+ * controller line.
+ */
+#define BSP_INTERRUPT_VECTOR_COUNT        LEON3_IRQMAP_BUS_LINE_COUNT
+#define BSP_INTERRUPT_DISPATCH_TABLE_SIZE ( BSP_INTERRUPT_VECTOR_MAX_EXT + 1 )
+#else
 #define BSP_INTERRUPT_VECTOR_COUNT ( BSP_INTERRUPT_VECTOR_MAX_EXT + 1 )
+#endif
 
 /* The check is different depending on IRQ controller, runtime detected */
 #define BSP_INTERRUPT_CUSTOM_VALID_VECTOR
 
-#ifdef LEON3_IRQAMP_IRQMAP
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern rtems_vector_number
-  LEON3_IrqCtrl_Mapping[ BSP_INTERRUPT_VECTOR_MAX_MAP + 1 ];
+/**
+ * @brief Gets the controller line of the bus line.
+ *
+ * Where the BSP uses no interrupt map, a bus line maps to the controller line
+ * of the same number.  Where the BSP uses the interrupt map, the directive
+ * gets the controller line to which the interrupt map connects the bus line.
+ * In SMP and multiprocessing configurations, bus line 0 connects to the
+ * controller line defined by the BSP option LEON3_IPI_CONTROLLER_LINE.
+ *
+ * Bus lines which map to the same controller line share its interrupt
+ * handlers.  They also share its enable, pending and affinity state.
+ *
+ * @param bus_line is the bus line number.
+ *
+ * @param[out] controller_line is the pointer to an rtems_vector_number object.
+ *   When the directive call is successful, the number of the controller line
+ *   of the bus line will be stored in this object.  When the number specified
+ *   by `bus_line` is invalid, UINT32_MAX will be stored in this object.
+ *
+ * @retval ::RTEMS_SUCCESSFUL The requested operation was successful.
+ *
+ * @retval ::RTEMS_INVALID_ADDRESS The `controller_line` parameter was NULL.
+ *
+ * @retval ::RTEMS_INVALID_NUMBER The number specified by `bus_line` was
+ *   greater than or equal to the count of bus lines.
+ *
+ * @par Constraints
+ * @parblock
+ * The following constraints apply to this directive:
+ *
+ * - The directive may be called from within interrupt context.
+ *
+ * - The directive may be called from within device driver initialization
+ *   context.
+ *
+ * - The directive may be called from within task context.
+ *
+ * - The directive will not cause the calling task to be preempted.
+ * @endparblock
+ */
+rtems_status_code leon3_irqmap_get(
+  rtems_vector_number  bus_line,
+  rtems_vector_number *controller_line
+);
+
+/**
+ * @brief Sets the controller line of the bus line.
+ *
+ * Where the BSP uses the interrupt map, the directive connects the bus line to
+ * the controller line in the interrupt map.  The directive leaves the mask,
+ * level, force and affinity state of both controller lines unchanged.  The
+ * state of the new controller line then applies to the bus line.
+ *
+ * A controller line of zero disconnects the bus line.  The bus line is then
+ * no valid interrupt vector.
+ *
+ * Bus lines which map to the same controller line share its interrupt
+ * handlers.  They also share its enable, pending and affinity state.
+ *
+ * The interrupt map works only if the boot processor uses the first internal
+ * interrupt controller of the IRQ(A)MP.
+ *
+ * Where the BSP uses no interrupt map, a bus line maps to the controller line
+ * of the same number and the map cannot change.
+ *
+ * @param bus_line is the bus line number.
+ *
+ * @param controller_line is the controller line number.
+ *
+ * @retval ::RTEMS_SUCCESSFUL The requested operation was successful.
+ *
+ * @retval ::RTEMS_INVALID_NUMBER The number specified by `bus_line` was
+ *   zero, or it was greater than or equal to the count of bus lines.
+ *
+ * @retval ::RTEMS_INVALID_NUMBER The number specified by `controller_line`
+ *   was greater than the last controller line.
+ *
+ * @retval ::RTEMS_UNSATISFIED The BSP used no interrupt map, and the number
+ *   specified by `controller_line` was not equal to `bus_line`.
+ *
+ * @retval ::RTEMS_INCORRECT_STATE The interrupt support was not initialized.
+ *
+ * @retval ::RTEMS_CALLED_FROM_ISR The directive was called from within
+ *   interrupt context.
+ *
+ * @retval ::RTEMS_RESOURCE_IN_USE An interrupt handler was installed on the
+ *   current controller line of the bus line, and the number specified by
+ *   `controller_line` was not equal to this controller line.
+ *
+ * @par Constraints
+ * @parblock
+ * The following constraints apply to this directive:
+ *
+ * - The directive may be called from within device driver initialization
+ *   context.
+ *
+ * - The directive may be called from within task context.
+ *
+ * - The directive may obtain and release the object allocator mutex.  This
+ *   may cause the calling task to be preempted.
+ * @endparblock
+ */
+rtems_status_code leon3_irqmap_set(
+  rtems_vector_number bus_line,
+  rtems_vector_number controller_line
+);
+
+#if LEON3_IRQMAP_BUS_LINE_COUNT != 0
+extern uint8_t LEON3_IrqCtrl_Mapping[ BSP_INTERRUPT_VECTOR_COUNT ];
+
+#define bsp_interrupt_vector_modify( v ) LEON3_IrqCtrl_Mapping[ ( v ) ]
+#endif
 
 #ifdef __cplusplus
 }
-#endif
-
-#define bsp_interrupt_vector_modify( v ) LEON3_IrqCtrl_Mapping[ ( v ) ]
 #endif
 
 #endif /* LIBBSP_LEON3_IRQ_CONFIG_H */

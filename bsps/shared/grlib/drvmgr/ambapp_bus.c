@@ -28,7 +28,7 @@
  *
  *  This is the general part of the different AMBA Plug & Play
  *  drivers. The drivers are wrappers around this driver, making
- *  the code size smaller for systems with multiple AMBA Plug & 
+ *  the code size smaller for systems with multiple AMBA Plug &
  *  Play buses.
  *
  *  The BSP define APBUART_INFO_AVAIL in order to add the info routine
@@ -364,21 +364,18 @@ void ambapp_bus_freq_register(
   }
 
   if ( amba_interface == DEV_AHB_MST ) {
-    adev = (struct ambapp_dev *) ( (uintptr_t) pnp->info.ahb_mst -
-                                   sizeof( struct ambapp_dev ) );
+    adev = RTEMS_CONTAINER_OF( pnp->info.ahb_mst, struct ambapp_dev, devinfo );
   } else if ( amba_interface == DEV_AHB_SLV ) {
-    adev = (struct ambapp_dev *) ( (uintptr_t) pnp->info.ahb_slv -
-                                   sizeof( struct ambapp_dev ) );
+    adev = RTEMS_CONTAINER_OF( pnp->info.ahb_slv, struct ambapp_dev, devinfo );
   } else if ( amba_interface == DEV_APB_SLV ) {
-    adev = (struct ambapp_dev *) ( (uintptr_t) pnp->info.apb_slv -
-                                   sizeof( struct ambapp_dev ) );
+    adev = RTEMS_CONTAINER_OF( pnp->info.apb_slv, struct ambapp_dev, devinfo );
   } else {
     return;
   }
 
   /* Calculate Top bus frequency from lower part. The frequency comes
-	 * from some kind of hardware able to report local bus frequency.
-	 */
+   * from some kind of hardware able to report local bus frequency.
+   */
   ambapp_freq_init( priv->config->abus, adev, freq_hz );
 }
 
@@ -393,14 +390,11 @@ static int ambapp_bus_freq_get(
   struct amba_dev_info *pnp = dev->businfo;
 
   if ( options == DEV_AHB_MST ) {
-    adev = (struct ambapp_dev *) ( (uintptr_t) pnp->info.ahb_mst -
-                                   sizeof( struct ambapp_dev ) );
+    adev = RTEMS_CONTAINER_OF( pnp->info.ahb_mst, struct ambapp_dev, devinfo );
   } else if ( options == DEV_AHB_SLV ) {
-    adev = (struct ambapp_dev *) ( (uintptr_t) pnp->info.ahb_slv -
-                                   sizeof( struct ambapp_dev ) );
+    adev = RTEMS_CONTAINER_OF( pnp->info.ahb_slv, struct ambapp_dev, devinfo );
   } else if ( options == DEV_APB_SLV ) {
-    adev = (struct ambapp_dev *) ( (uintptr_t) pnp->info.apb_slv -
-                                   sizeof( struct ambapp_dev ) );
+    adev = RTEMS_CONTAINER_OF( pnp->info.apb_slv, struct ambapp_dev, devinfo );
   } else {
     *freq_hz = 0;
     return -1;
@@ -558,13 +552,13 @@ static int ambapp_dev_fixup(
 )
 {
   /* OCCAN speciality:
-	 *  Mulitple cores are supported through the same amba AHB interface.
-	 *  The number of "sub cores" can be detected by decoding the AMBA
-	 *  Plug&Play version information. verion = ncores. A maximum of 8
-	 *  sub cores are supported, each separeated with 0x100 inbetween.
-	 *
-	 *  Now, lets detect sub cores.
-	 */
+   *  Mulitple cores are supported through the same amba AHB interface.
+   *  The number of "sub cores" can be detected by decoding the AMBA
+   *  Plug&Play version information. verion = ncores. A maximum of 8
+   *  sub cores are supported, each separeated with 0x100 inbetween.
+   *
+   *  Now, lets detect sub cores.
+   */
   if (
     ( pnp->info.device == GAISLER_CANAHB ) &&
     ( pnp->info.vendor == VENDOR_GAISLER )
@@ -648,8 +642,8 @@ static void ambapp_core_register(
   );
 
   /* Get unique device name from AMBA data base by combining VENDOR and
-	 * DEVICE short names
-	 */
+   * DEVICE short names
+   */
   namelen = ambapp_vendev_id2str( vendor, device, buf );
 
   /* Allocate a device */
@@ -719,9 +713,9 @@ static int ambapp_dev_register_fixup(
 )
 {
   /* GR740 GRPCI2 speciality:
-	 * - In the GR740 the APB_SLV is detected before the AHB_SLV
-	 *   which makes the registration incorrect. We deal with it in 
-	 *   this function. */
+   * - In the GR740 the APB_SLV is detected before the AHB_SLV
+   *   which makes the registration incorrect. We deal with it in
+   *   this function. */
   if (
     ( dev->dev_type == DEV_APB_SLV ) && ( dev->device == GAISLER_GRPCI2 ) &&
     ( dev->vendor == VENDOR_GAISLER ) && ( p->ahb_slv == NULL )
@@ -849,8 +843,8 @@ static int ambapp_ids_register( struct drvmgr_bus *bus )
   arg.bus = bus;
 
   /* Combine the AHB MST, AHB SLV and APB SLV interfaces of a core. A core has often more than
-	 * one interface. A core can not have more than one interface of the same type.
-	 */
+   * one interface. A core can not have more than one interface of the same type.
+   */
   ambapp_for_each(
     abus,
     ( OPTIONS_ALL_DEVS | OPTIONS_FREE ),

@@ -35,6 +35,22 @@
 #include <bsp/linker-symbols.h>
 #include <bspopts.h>
 
+#ifdef RTEMS_SMP
+	/* Adds (\index + 1) * \size to \top, clobbers \size and \index */
+	.macro	ADD_STACK_TOP_OFFSET top, size, index
+#ifdef __riscv_mul
+	addi	\index, \index, 1
+	mul	\size, \size, \index
+	add	\top, \top, \size
+#else
+1:
+	add	\top, \top, \size
+	addi	\index, \index, -1
+	bgez	\index, 1b
+#endif
+	.endm
+#endif
+
 PUBLIC(_start)
 
 	.section	.bsp_start_text, "wax", @progbits
@@ -61,6 +77,14 @@ SYM(_start):
 
 	mv	s0, a0
 	mv	s1, a1
+
+#ifdef RISCV_START_SAVE_STACK_POINTER
+	/*
+	 * The boot loader passes the end of RAM in the stack pointer, as GRMON
+	 * does.
+	 */
+	mv	s2, sp
+#endif
 
 #ifdef RISCV_USE_S_MODE
 	/* start boot hartid */
@@ -92,6 +116,11 @@ SYM(_start):
 	call RISCV_Start_on_processor
 
 	/* only boot hartid returns here */
+
+#ifdef RISCV_START_SAVE_STACK_POINTER
+	LADDR	t0, riscv_start_stack_pointer
+	SREG	s2, 0(t0)
+#endif
 
 .Lclear_bss:
 
@@ -147,6 +176,35 @@ RISCV_Start_on_processor:
 	LADDR	gp, __global_pointer$
 	.option	pop
 
+#ifdef RTEMS_SMP
+	li	t3, RISCV_BOOT_HARTID
+	sub	a0, a0, t3
+#endif
+
+#ifdef RISCV_SMRNMI
+	/* Exceptions use the RNMI stack until NMIE is set */
+#ifdef RTEMS_SMP
+	LADDR	t0, _RISCV_RNMI_stack_area_begin
+	LADDR	t1, _RISCV_RNMI_stack_size
+	mv	t2, a0
+	ADD_STACK_TOP_OFFSET	t0, t1, t2
+#else
+	LADDR	t0, _RISCV_RNMI_stack_area_end
+#endif
+	csrw	mnscratch, t0
+	csrw	mncause, zero
+
+	/* Also relocates the handler, which keeps it linked when unused below */
+	LADDR	t0, _RISCV_RNMI_handler
+#if RISCV_RNMI_VECTOR_REGISTER
+	li	t1, RISCV_RNMI_VECTOR_REGISTER
+	SREG	t0, 0(t1)
+#endif
+#if RISCV_RNMI_VECTOR_CSR
+	csrw	RISCV_RNMI_VECTOR_CSR, t0
+#endif
+#endif
+
 #ifndef RTEMS_SMP
 	li	t3, RISCV_BOOT_HARTID
 	bne	a0, t3, .Lwfi
@@ -178,9 +236,6 @@ RISCV_Start_on_processor:
 	 */
 #ifdef RTEMS_SMP
 	LADDR	sp, _ISR_Stack_area_begin
-	LADDR	t2, _ISR_Stack_size
-	li	t3, RISCV_BOOT_HARTID
-	sub	a0, a0, t3
 
 	/*
 	 * Check that this is a configured processor.  If not, then there is
@@ -191,20 +246,9 @@ RISCV_Start_on_processor:
 	bgeu	a0, t3, .Lwfi
 
 	/* Adjust stack pointer */
-#ifdef __riscv_mul
-	addi	t0, a0, 1
-	mul	t2, t2, t0
-#else
+	LADDR	t2, _ISR_Stack_size
 	mv	t0, a0
-	mv	t1, t2
-
-.Ladd_more:
-
-	add	t2, t2, t1
-	addi	t0, t0, -1
-	bnez	t0, .Ladd_more
-#endif
-	add	sp, sp, t2
+	ADD_STACK_TOP_OFFSET	sp, t2, t0
 
 	LADDR	t0, _Per_CPU_Information
 	slli	t1, a0, PER_CPU_CONTROL_SIZE_LOG2
@@ -264,3 +308,14 @@ RISCV_Start_on_processor:
 #endif
 
 #endif /* RTEMS_SMP */
+
+#ifdef RISCV_START_SAVE_STACK_POINTER
+	.section	.data, "aw"
+	.align	PTR_ALIGN
+
+	.globl	riscv_start_stack_pointer
+	.type	riscv_start_stack_pointer, @object
+	.size	riscv_start_stack_pointer, PTR_SIZE
+riscv_start_stack_pointer:
+	PTR_VALUE	0
+#endif

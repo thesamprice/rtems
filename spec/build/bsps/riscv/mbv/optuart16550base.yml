@@ -1,0 +1,21 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-integer: null
+- assert-uint32: null
+- format-and-define: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price
+default:
+- enabled-by: true
+  value: 0x44a11000
+description: |
+  base address of the 16550 UART register block; the QEMU
+  amd-microblaze-v-generic machine maps the registers with an offset of
+  0x1000 into the 0x44a10000 device region, with a register stride of four
+  bytes
+enabled-by: true
+format: '{:#010x}'
+links: []
+name: MBV_UART_16550_BASE
+type: build

@@ -1,0 +1,19 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- set-value: |
+    bsps/include bsps/${ARCH}/include bsps/${ARCH}/${BSP_FAMILY}/include bsps/microblaze/include bsps/microblaze/microblaze_fpga/include
+- substitute: null
+- split: null
+- env-assign: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price
+default: []
+description: |
+  The include search paths contain the MicroBlaze BSP include directories
+  since the UART Lite, interrupt controller, and timer support is shared
+  with the MicroBlaze BSPs.
+enabled-by: true
+links: []
+name: BSP_INCLUDES
+type: build

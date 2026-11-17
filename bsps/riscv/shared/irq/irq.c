@@ -1,0 +1,790 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
+
+/**
+ * @file
+ *
+ * @ingroup RTEMSBSPsRISCVShared
+ *
+ * @brief Interrupt support.
+ */
+
+/*
+ * Copyright (C) 2026 Intel Corporation
+ * Copyright (C) 2026 Gedare Bloom
+ * Copyright (C) 2018, 2026 embedded brains GmbH & Co. KG
+ *
+ * Copyright (c) 2015 University of York.
+ * Hesham Almatary <hesham@alumni.york.ac.uk>
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
+#include <bsp/fatal.h>
+#include <bsp/irq-generic.h>
+#include <bsp/irqimpl.h>
+#include <bsp/riscv.h>
+
+#ifdef RISCV_SMRNMI
+#include <rtems/score/riscv-rnmi.h>
+#endif
+
+#include <rtems/score/percpu.h>
+#include <rtems/score/riscv-utility.h>
+#include <rtems/score/scheduler.h>
+#include <rtems/score/smpimpl.h>
+
+#ifdef RTEMS_SMP
+/*
+ * The lovely PLIC has an interrupt enable bit per hart for each interrupt
+ * source.  This makes the interrupt enable/disable a bit difficult.  We have
+ * to store the interrupt distribution in software.  To keep it simple, we
+ * support only a one-to-one and one-to-all interrupt to processor
+ * distribution.  For a one-to-one distribution, the array member must point to
+ * the per-CPU control of the corresponding processor.  For a one-to-all
+ * distribution, the array member must be NULL.  The array index is the
+ * external interrupt index minus one (external interrupt index zero is a
+ * special value, see PLIC documentation).
+ */
+static Per_CPU_Control *
+riscv_plic_irq_to_cpu[RISCV_MAXIMUM_EXTERNAL_INTERRUPTS];
+#endif
+
+RTEMS_INTERRUPT_LOCK_DEFINE(static, riscv_plic_lock, "PLIC")
+
+/*
+ * The PLIC priority of an interrupt source is a WARL register.  A PLIC may
+ * implement fewer than 32 bits of it.
+ */
+#ifdef RISCV_PLIC_PROBE_PRIORITY_BITS
+static uint32_t riscv_plic_maximum_priority;
+#else
+#define riscv_plic_maximum_priority UINT32_MAX
+#endif
+
+void _RISCV_Interrupt_dispatch(uintptr_t cause, Per_CPU_Control *cpu_self)
+{
+#if defined(RISCV_USE_S_MODE) && !defined(RTEMS_SMP)
+  (void) cpu_self;
+#endif
+
+#ifdef RISCV_USE_S_MODE
+#define CAUSE_TIMER (RISCV_INTERRUPT_TIMER_SUPERVISOR << 1)
+#define CAUSE_EXTERNAL (RISCV_INTERRUPT_EXTERNAL_SUPERVISOR << 1)
+#define CAUSE_SOFTWARE (RISCV_INTERRUPT_SOFTWARE_SUPERVISOR << 1)
+#else
+#define CAUSE_TIMER (RISCV_INTERRUPT_TIMER_MACHINE << 1)
+#define CAUSE_EXTERNAL (RISCV_INTERRUPT_EXTERNAL_MACHINE << 1)
+#define CAUSE_SOFTWARE (RISCV_INTERRUPT_SOFTWARE_MACHINE << 1)
+#endif
+
+  /*
+   * Get rid of the most significant bit which indicates if the exception was
+   * caused by an interrupt or not.
+   */
+  cause <<= 1;
+
+  if (cause == CAUSE_TIMER) {
+    bsp_interrupt_handler_dispatch_unchecked(RISCV_INTERRUPT_VECTOR_TIMER);
+  } else if (cause == CAUSE_EXTERNAL) {
+    volatile RISCV_PLIC_hart_regs *plic_hart_regs;
+    uint32_t interrupt_index;
+
+    plic_hart_regs = cpu_self->cpu_per_cpu.plic_hart_regs;
+
+    while ((interrupt_index = plic_hart_regs->claim_complete) != 0) {
+#if (RISCV_MAXIMUM_EXTERNAL_INTERRUPTS & \
+  (RISCV_MAXIMUM_EXTERNAL_INTERRUPTS - 1)) == 0
+      /*
+       * The mask keeps the vector of a faulty claim within the dispatch table.
+       */
+      bsp_interrupt_handler_dispatch_unchecked(
+        RISCV_INTERRUPT_VECTOR_EXTERNAL(
+          interrupt_index & (RISCV_MAXIMUM_EXTERNAL_INTERRUPTS - 1)
+        )
+      );
+#else
+      bsp_interrupt_handler_dispatch(
+        RISCV_INTERRUPT_VECTOR_EXTERNAL(interrupt_index)
+      );
+#endif
+
+      plic_hart_regs->claim_complete = interrupt_index;
+
+      /*
+       * WARN: It is not clear which fence is necessary here or if a fence is
+       * necessary at all.  The goal is that the complete signal is somehow
+       * recognized by the PLIC before the next claim is issued.
+       */
+      _RISCV_MMIO_store_release_fence();
+    }
+  } else if (cause == CAUSE_SOFTWARE) {
+    /*
+     * Clear the software interrupt on this processor.  Synchronization of
+     * inter-processor interrupts is done via Per_CPU_Control::message in
+     * _SMP_Inter_processor_interrupt_handler().
+     */
+#ifdef RISCV_USE_S_MODE
+    clear_csr(sip, SIP_SSIP);
+#else
+    *cpu_self->cpu_per_cpu.clint_msip = 0;
+#endif
+
+#ifdef RTEMS_SMP
+    _SMP_Inter_processor_interrupt_handler(cpu_self);
+#endif
+
+#ifdef RISCV_SMRNMI
+    _RISCV_RNMI_deferred();
+#endif
+
+#if defined(RTEMS_SMP) || defined(RISCV_SMRNMI)
+    bsp_interrupt_handler_dispatch_unlikely(RISCV_INTERRUPT_VECTOR_SOFTWARE);
+#else
+    bsp_interrupt_handler_dispatch_unchecked(RISCV_INTERRUPT_VECTOR_SOFTWARE);
+#endif
+  } else {
+    bsp_fatal(RISCV_FATAL_UNEXPECTED_INTERRUPT_EXCEPTION);
+  }
+}
+
+#ifndef RISCV_USE_S_MODE
+
+static void riscv_clint_per_cpu_init(
+  volatile RISCV_CLINT_regs *clint,
+  Per_CPU_Control *cpu,
+  uint32_t index
+)
+{
+  cpu->cpu_per_cpu.clint_msip = &clint->msip[index];
+  cpu->cpu_per_cpu.clint_mtimecmp = &clint->mtimecmp[index];
+}
+
+#endif
+
+static void riscv_plic_per_cpu_init(
+  volatile RISCV_PLIC_regs *plic,
+  uint32_t enable_register_count,
+  Per_CPU_Control *cpu,
+  uint32_t index
+)
+{
+  volatile uint32_t *enable;
+  uint32_t i;
+
+  plic->harts[index].priority_threshold = 0;
+
+  enable = &plic->enable[index][0];
+  cpu->cpu_per_cpu.plic_m_ie = enable;
+  cpu->cpu_per_cpu.plic_hart_regs = &plic->harts[index];
+
+  for (i = 0; i < enable_register_count; ++i) {
+    enable[i] = 0;
+  }
+}
+
+static void riscv_plic_cpu_0_init(
+  volatile RISCV_PLIC_regs *plic,
+  uint32_t interrupt_last
+)
+{
+#ifdef RTEMS_SMP
+  Per_CPU_Control *cpu;
+#endif
+  uint32_t i;
+
+#ifdef RTEMS_SMP
+  cpu = _Per_CPU_Get_by_index(0);
+#endif
+
+  for (i = 1; i <= interrupt_last; ++i) {
+    plic->priority[i] = 1;
+#ifdef RTEMS_SMP
+    riscv_plic_irq_to_cpu[i - 1] = cpu;
+#endif
+  }
+
+  /*
+   * External M-mode interrupts on secondary processors are enabled in
+   * bsp_start_on_secondary_processor().
+   */
+#ifdef RISCV_USE_S_MODE
+  set_csr(sie, SIP_SEIP);
+#else
+  set_csr(mie, MIP_MEIP);
+#endif
+}
+
+#ifndef RISCV_USE_S_MODE
+
+static void riscv_clint_init(void)
+{
+  volatile RISCV_CLINT_regs *clint;
+  uint32_t cpu_max;
+  uint32_t cpu_index;
+
+  clint = riscv_clint_get();
+  cpu_max = rtems_configuration_get_maximum_processors();
+
+  for (cpu_index = 0; cpu_index < cpu_max; ++cpu_index) {
+    uint32_t index;
+
+#ifdef RTEMS_SMP
+    if ( _Scheduler_Initial_assignments[ cpu_index ].scheduler == NULL ) {
+      /* Skip not configured processor */
+      continue;
+    }
+#endif
+
+    index = riscv_clint_get_index(cpu_index);
+
+#ifdef RISCV_CLINT_INDEX_MAY_BE_ABSENT
+    if (index == UINT32_MAX) {
+      continue;
+    }
+#endif
+
+    riscv_clint_per_cpu_init(clint, _Per_CPU_Get_by_index(cpu_index), index);
+  }
+}
+
+#endif
+
+static void riscv_plic_init(void)
+{
+  volatile RISCV_PLIC_regs *plic;
+  uint32_t interrupt_count;
+  uint32_t enable_register_count;
+  uint32_t cpu_max;
+  uint32_t cpu_index;
+
+  plic = riscv_plic_get();
+
+#ifdef RISCV_PLIC_MAY_BE_ABSENT
+  if (plic == NULL) {
+    return;
+  }
+#endif
+
+  interrupt_count = riscv_plic_get_interrupt_count();
+
+#ifdef RISCV_PLIC_PROBE_PRIORITY_BITS
+  /*
+   * A PLIC has at least one interrupt source.  The register keeps only the
+   * implemented bits.  The priority of the source is set by
+   * riscv_plic_cpu_0_init() below.
+   */
+  plic->priority[1] = UINT32_MAX;
+  riscv_plic_maximum_priority = plic->priority[1];
+#endif
+
+  /*
+   * Each interrupt enable register contains exactly 32 enable bits.
+   * Calculate the enable register count based on the number of interrupts
+   * supported by the PLIC.  Take the reserved interrupt ID zero into
+   * account.
+   */
+  enable_register_count = RTEMS_ALIGN_UP(interrupt_count + 1, 32) / 32;
+
+  cpu_max = rtems_configuration_get_maximum_processors();
+
+  for (cpu_index = 0; cpu_index < cpu_max; ++cpu_index) {
+    uint32_t context;
+
+#ifdef RTEMS_SMP
+    if ( _Scheduler_Initial_assignments[ cpu_index ].scheduler == NULL ) {
+      /* Skip not configured processor */
+      continue;
+    }
+#endif
+
+    context = riscv_plic_get_context(cpu_index);
+
+#ifdef RISCV_PLIC_CONTEXT_MAY_BE_ABSENT
+    if (context == UINT32_MAX) {
+      continue;
+    }
+#endif
+
+    riscv_plic_per_cpu_init(
+      plic,
+      enable_register_count,
+      _Per_CPU_Get_by_index(cpu_index),
+      context
+    );
+  }
+
+  riscv_plic_cpu_0_init(plic, interrupt_count);
+}
+
+void bsp_interrupt_facility_initialize(void)
+{
+#ifndef RISCV_USE_S_MODE
+  riscv_clint_init();
+#endif
+
+  riscv_plic_init();
+}
+
+
+bool bsp_interrupt_is_valid_vector(rtems_vector_number vector)
+{
+  rtems_vector_number max;
+
+  /* The RNMI vectors are located above the external interrupts */
+  if (RISCV_INTERRUPT_VECTOR_IS_RNMI(vector)) {
+    return true;
+  }
+
+  /*
+   * The PLIC interrupt ID of zero is reserved.  For example, this ID is used
+   * to indicate that no interrupt was claimed.
+   */
+  if (vector == RISCV_INTERRUPT_VECTOR_EXTERNAL(0)) {
+    return false;
+  }
+
+  max = RISCV_INTERRUPT_VECTOR_EXTERNAL(riscv_plic_get_interrupt_count());
+
+  return vector < max;
+}
+
+rtems_status_code bsp_interrupt_get_attributes(
+  rtems_vector_number         vector,
+  rtems_interrupt_attributes *attributes
+)
+{
+  bool is_external = RISCV_INTERRUPT_VECTOR_IS_EXTERNAL(vector);
+  bool is_rnmi = RISCV_INTERRUPT_VECTOR_IS_RNMI(vector);
+
+  /* RNMIs are enabled by the boot code and cannot be masked or disabled */
+  attributes->is_maskable = !is_rnmi;
+  attributes->can_enable = !is_rnmi;
+  attributes->maybe_enable = true;
+  attributes->can_disable = !is_rnmi;
+  attributes->maybe_disable = !is_rnmi;
+  attributes->can_raise = (vector == RISCV_INTERRUPT_VECTOR_SOFTWARE);
+  attributes->can_raise_on = attributes->can_raise;
+  attributes->cleared_by_acknowledge = true;
+  attributes->can_get_affinity = is_external;
+  attributes->can_set_affinity = is_external;
+
+  attributes->maximum_priority = riscv_plic_maximum_priority;
+  attributes->can_get_priority = is_external;
+  attributes->can_set_priority = is_external;
+
+  if (vector == RISCV_INTERRUPT_VECTOR_SOFTWARE) {
+    attributes->trigger_signal = RTEMS_INTERRUPT_NO_SIGNAL;
+  }
+
+  return RTEMS_SUCCESSFUL;
+}
+
+rtems_status_code bsp_interrupt_is_pending(
+  rtems_vector_number vector,
+  bool               *pending
+)
+{
+  bsp_interrupt_assert(bsp_interrupt_is_valid_vector(vector));
+  bsp_interrupt_assert(pending != NULL);
+
+  if (RISCV_INTERRUPT_VECTOR_IS_EXTERNAL(vector)) {
+    uint32_t interrupt_index;
+    uint32_t group;
+    uint32_t bit;
+
+    interrupt_index = RISCV_INTERRUPT_VECTOR_EXTERNAL_TO_INDEX(vector);
+    group = interrupt_index / 32;
+    bit = UINT32_C(1) << (interrupt_index % 32);
+    *pending = ((riscv_plic_get()->pending[group] & bit) != 0);
+    return RTEMS_SUCCESSFUL;
+  }
+
+  if (vector == RISCV_INTERRUPT_VECTOR_TIMER) {
+#ifdef RISCV_USE_S_MODE
+    *pending = (read_csr(sip) & SIP_STIP) != 0;
+#else
+    *pending = (read_csr(mip) & MIP_MTIP) != 0;
+#endif
+    return RTEMS_SUCCESSFUL;
+  }
+
+  if (RISCV_INTERRUPT_VECTOR_IS_RNMI(vector)) {
+    /* RNMI sources have no architectural pending bit */
+    *pending = false;
+    return RTEMS_SUCCESSFUL;
+  }
+
+  _Assert(vector == RISCV_INTERRUPT_VECTOR_SOFTWARE);
+#ifdef RISCV_USE_S_MODE
+  *pending = (read_csr(sip) & SIP_SSIP) != 0;
+#else
+  *pending = (read_csr(mip) & MIP_MSIP) != 0;
+#endif
+  return RTEMS_SUCCESSFUL;
+}
+
+static inline rtems_status_code riscv_raise_on(
+  rtems_vector_number vector,
+  uint32_t            cpu_index
+)
+{
+  bsp_interrupt_assert(bsp_interrupt_is_valid_vector(vector));
+
+  if (vector != RISCV_INTERRUPT_VECTOR_SOFTWARE) {
+    return RTEMS_UNSATISFIED;
+  }
+  riscv_send_ipi( cpu_index );
+  return RTEMS_SUCCESSFUL;
+}
+
+rtems_status_code bsp_interrupt_raise(rtems_vector_number vector)
+{
+  return riscv_raise_on(vector, rtems_scheduler_get_processor());
+}
+
+#if defined(RTEMS_SMP)
+rtems_status_code bsp_interrupt_raise_on(
+  rtems_vector_number vector,
+  uint32_t            cpu_index
+)
+{
+  return riscv_raise_on(vector, cpu_index);
+}
+#endif
+
+rtems_status_code bsp_interrupt_clear(rtems_vector_number vector)
+{
+  (void) vector;
+
+  bsp_interrupt_assert(bsp_interrupt_is_valid_vector(vector));
+  return RTEMS_UNSATISFIED;
+}
+
+rtems_status_code bsp_interrupt_vector_is_enabled(
+  rtems_vector_number vector,
+  bool               *enabled
+)
+{
+  bsp_interrupt_assert(bsp_interrupt_is_valid_vector(vector));
+  bsp_interrupt_assert(enabled != NULL);
+
+  if (RISCV_INTERRUPT_VECTOR_IS_EXTERNAL(vector)) {
+    uint32_t interrupt_index;
+    uint32_t group;
+    uint32_t bit;
+    Per_CPU_Control *cpu;
+#ifdef RTEMS_SMP
+    uint32_t cpu_max;
+    uint32_t cpu_index;
+#endif
+
+    interrupt_index = RISCV_INTERRUPT_VECTOR_EXTERNAL_TO_INDEX(vector);
+    group = interrupt_index / 32;
+    bit = UINT32_C(1) << (interrupt_index % 32);
+
+#ifdef RTEMS_SMP
+    cpu_max = _SMP_Get_processor_maximum();
+
+    for (cpu_index = 0; cpu_index < cpu_max; ++cpu_index) {
+      volatile uint32_t *enable;
+
+      cpu = _Per_CPU_Get_by_index(cpu_index);
+      enable = cpu->cpu_per_cpu.plic_m_ie;
+
+      if (enable != NULL && (enable[group] & bit) != 0) {
+        *enabled = true;
+        return RTEMS_SUCCESSFUL;
+      }
+    }
+
+    *enabled = false;
+#else
+    cpu = _Per_CPU_Get_by_index(0);
+    *enabled = (cpu->cpu_per_cpu.plic_m_ie[group] & bit) != 0;
+#endif
+
+    return RTEMS_SUCCESSFUL;
+  }
+
+  if (vector == RISCV_INTERRUPT_VECTOR_TIMER) {
+#ifdef RISCV_USE_S_MODE
+    *enabled = (read_csr(sie) & SIP_STIP) != 0;
+#else
+    *enabled = (read_csr(mie) & MIP_MTIP) != 0;
+#endif
+    return RTEMS_SUCCESSFUL;
+  }
+
+  if (RISCV_INTERRUPT_VECTOR_IS_RNMI(vector)) {
+    /* RNMIs are enabled by the boot code and stay enabled */
+    *enabled = true;
+    return RTEMS_SUCCESSFUL;
+  }
+
+  _Assert(vector == RISCV_INTERRUPT_VECTOR_SOFTWARE);
+#ifdef RISCV_USE_S_MODE
+    *enabled = (read_csr(sie) & SIP_SSIP) != 0;
+#else
+  *enabled = (read_csr(mie) & MIP_MSIP) != 0;
+#endif
+  return RTEMS_SUCCESSFUL;
+}
+
+rtems_status_code bsp_interrupt_vector_enable(rtems_vector_number vector)
+{
+  bsp_interrupt_assert(bsp_interrupt_is_valid_vector(vector));
+
+  if (RISCV_INTERRUPT_VECTOR_IS_EXTERNAL(vector)) {
+    uint32_t interrupt_index;
+    uint32_t group;
+    uint32_t bit;
+    rtems_interrupt_lock_context lock_context;
+    Per_CPU_Control *cpu;
+
+    interrupt_index = RISCV_INTERRUPT_VECTOR_EXTERNAL_TO_INDEX(vector);
+    group = interrupt_index / 32;
+    bit = UINT32_C(1) << (interrupt_index % 32);
+#ifdef RTEMS_SMP
+    cpu = riscv_plic_irq_to_cpu[interrupt_index - 1];
+#endif
+
+    rtems_interrupt_lock_acquire(&riscv_plic_lock, &lock_context);
+
+#ifdef RTEMS_SMP
+    if (cpu != NULL) {
+      cpu->cpu_per_cpu.plic_m_ie[group] |= bit;
+    } else {
+      volatile uint32_t *enable;
+      uint32_t cpu_max;
+      uint32_t cpu_index;
+
+      cpu_max = _SMP_Get_processor_maximum();
+
+      for (cpu_index = 0; cpu_index < cpu_max; ++cpu_index) {
+        cpu = _Per_CPU_Get_by_index(cpu_index);
+        enable = cpu->cpu_per_cpu.plic_m_ie;
+
+        if (enable != NULL) {
+          enable[group] |= bit;
+        }
+      }
+    }
+#else
+    cpu = _Per_CPU_Get_by_index(0);
+    cpu->cpu_per_cpu.plic_m_ie[group] |= bit;
+#endif
+
+    rtems_interrupt_lock_release(&riscv_plic_lock, &lock_context);
+    return RTEMS_SUCCESSFUL;
+  }
+
+  if (vector == RISCV_INTERRUPT_VECTOR_TIMER) {
+#ifdef RISCV_USE_S_MODE
+    set_csr(sie, SIP_STIP);
+#else
+    set_csr(mie, MIP_MTIP);
+#endif
+    return RTEMS_SUCCESSFUL;
+  }
+
+  if (RISCV_INTERRUPT_VECTOR_IS_RNMI(vector)) {
+    /* Already enabled, must not fall through to the software interrupt */
+    return RTEMS_SUCCESSFUL;
+  }
+
+  _Assert(vector == RISCV_INTERRUPT_VECTOR_SOFTWARE);
+#ifdef RISCV_USE_S_MODE
+  set_csr(sie, SIP_SSIP);
+#else
+  set_csr(mie, MIP_MSIP);
+#endif
+  return RTEMS_SUCCESSFUL;
+}
+
+rtems_status_code bsp_interrupt_vector_disable(rtems_vector_number vector)
+{
+  bsp_interrupt_assert(bsp_interrupt_is_valid_vector(vector));
+
+  if (RISCV_INTERRUPT_VECTOR_IS_EXTERNAL(vector)) {
+    uint32_t interrupt_index;
+    uint32_t group;
+    uint32_t bit;
+    rtems_interrupt_lock_context lock_context;
+    Per_CPU_Control *cpu;
+
+    interrupt_index = RISCV_INTERRUPT_VECTOR_EXTERNAL_TO_INDEX(vector);
+    group = interrupt_index / 32;
+    bit = UINT32_C(1) << (interrupt_index % 32);
+#ifdef RTEMS_SMP
+    cpu = riscv_plic_irq_to_cpu[interrupt_index - 1];
+#endif
+
+    rtems_interrupt_lock_acquire(&riscv_plic_lock, &lock_context);
+
+#ifdef RTEMS_SMP
+    if (cpu != NULL) {
+      cpu->cpu_per_cpu.plic_m_ie[group] &= ~bit;
+    } else {
+      volatile uint32_t *enable;
+      uint32_t cpu_max;
+      uint32_t cpu_index;
+
+      cpu_max = _SMP_Get_processor_maximum();
+
+      for (cpu_index = 0; cpu_index < cpu_max; ++cpu_index) {
+        cpu = _Per_CPU_Get_by_index(cpu_index);
+        enable = cpu->cpu_per_cpu.plic_m_ie;
+
+        if (enable != NULL) {
+          enable[group] &= ~bit;
+        }
+      }
+    }
+#else
+    cpu = _Per_CPU_Get_by_index(0);
+    cpu->cpu_per_cpu.plic_m_ie[group] &= ~bit;
+#endif
+
+    rtems_interrupt_lock_release(&riscv_plic_lock, &lock_context);
+    return RTEMS_SUCCESSFUL;
+  }
+
+  if (vector == RISCV_INTERRUPT_VECTOR_TIMER) {
+#ifdef RISCV_USE_S_MODE
+    clear_csr(sie, SIP_STIP);
+#else
+    clear_csr(mie, MIP_MTIP);
+#endif
+    return RTEMS_SUCCESSFUL;
+  }
+
+  if (RISCV_INTERRUPT_VECTOR_IS_RNMI(vector)) {
+    return RTEMS_UNSATISFIED;
+  }
+
+  _Assert(vector == RISCV_INTERRUPT_VECTOR_SOFTWARE);
+#ifdef RISCV_USE_S_MODE
+  clear_csr(sie, SIP_SSIP);
+#else
+  clear_csr(mie, MIP_MSIP);
+#endif
+  return RTEMS_SUCCESSFUL;
+}
+
+rtems_status_code bsp_interrupt_set_priority(
+  rtems_vector_number vector,
+  uint32_t priority
+)
+{
+  bsp_interrupt_assert(bsp_interrupt_is_valid_vector(vector));
+
+  if (!RISCV_INTERRUPT_VECTOR_IS_EXTERNAL(vector)) {
+    return RTEMS_UNSATISFIED;
+  }
+
+#ifdef RISCV_PLIC_PROBE_PRIORITY_BITS
+  if (priority > riscv_plic_maximum_priority) {
+    return RTEMS_INVALID_PRIORITY;
+  }
+#endif
+
+  riscv_plic_get()->priority[RISCV_INTERRUPT_VECTOR_EXTERNAL_TO_INDEX(vector)] =
+    riscv_plic_maximum_priority - priority;
+  return RTEMS_SUCCESSFUL;
+}
+
+rtems_status_code bsp_interrupt_get_priority(
+  rtems_vector_number vector,
+  uint32_t *priority
+)
+{
+  bsp_interrupt_assert(bsp_interrupt_is_valid_vector(vector));
+  bsp_interrupt_assert(priority != NULL);
+
+  if (!RISCV_INTERRUPT_VECTOR_IS_EXTERNAL(vector)) {
+    return RTEMS_UNSATISFIED;
+  }
+
+  *priority = riscv_plic_maximum_priority -
+    riscv_plic_get()->priority[RISCV_INTERRUPT_VECTOR_EXTERNAL_TO_INDEX(vector)];
+  return RTEMS_SUCCESSFUL;
+}
+
+#ifdef RTEMS_SMP
+rtems_status_code bsp_interrupt_set_affinity(
+  rtems_vector_number vector,
+  const Processor_mask *affinity
+)
+{
+  if (RISCV_INTERRUPT_VECTOR_IS_EXTERNAL(vector)) {
+    uint32_t interrupt_index;
+    Processor_mask mask;
+
+    interrupt_index = RISCV_INTERRUPT_VECTOR_EXTERNAL_TO_INDEX(vector);
+
+    _Processor_mask_And(&mask, affinity, _SMP_Get_online_processors());
+
+    if (_Processor_mask_Is_equal(&mask, _SMP_Get_online_processors())) {
+      riscv_plic_irq_to_cpu[interrupt_index - 1] = NULL;
+      return RTEMS_SUCCESSFUL;
+    }
+
+    if (_Processor_mask_Count(&mask) == 1) {
+      uint32_t cpu_index;
+      Per_CPU_Control *cpu;
+
+      cpu_index = _Processor_mask_Find_last_set(&mask) - 1;
+      cpu = _Per_CPU_Get_by_index(cpu_index);
+      riscv_plic_irq_to_cpu[interrupt_index - 1] = cpu;
+      return RTEMS_SUCCESSFUL;
+    }
+
+    return RTEMS_INVALID_NUMBER;
+  }
+
+  return RTEMS_UNSATISFIED;
+}
+
+rtems_status_code bsp_interrupt_get_affinity(
+  rtems_vector_number vector,
+  Processor_mask *affinity
+)
+{
+  if (RISCV_INTERRUPT_VECTOR_IS_EXTERNAL(vector)) {
+    uint32_t interrupt_index;
+    Per_CPU_Control *cpu;
+
+    interrupt_index = RISCV_INTERRUPT_VECTOR_EXTERNAL_TO_INDEX(vector);
+    cpu = riscv_plic_irq_to_cpu[interrupt_index - 1];
+
+    if (cpu != NULL) {
+      _Processor_mask_Set(affinity, _Per_CPU_Get_index(cpu));
+    } else {
+      _Processor_mask_Assign(affinity, _SMP_Get_online_processors());
+    }
+
+    return RTEMS_SUCCESSFUL;
+  }
+
+  return RTEMS_UNSATISFIED;
+}
+#endif

@@ -42,11 +42,32 @@
 #include <rtems/score/threadimpl.h>
 #include <rtems/score/status.h>
 
-void _Thread_Continue( Thread_Control *the_thread, Status_Control status )
+/*
+ * The token names the wait which armed a timeout.  The mask selects the part
+ * of the thread wait flags which the token must match.  A caller which ends
+ * the current wait of the thread hands a mask of zero, so the token does not
+ * matter to it.
+ */
+static void _Thread_Do_continue(
+  Thread_Control   *the_thread,
+  Status_Control    status,
+  Thread_Wait_flags token,
+  Thread_Wait_flags mask
+)
 {
   Thread_queue_Context queue_context;
   Thread_Wait_flags    wait_flags;
   bool                 unblock;
+
+#if !defined( RTEMS_SMP )
+  /*
+   * A tickle of a watchdog runs with thread dispatch disabled.  On a
+   * uniprocessor the thread cannot begin a new wait while the timeout runs,
+   * so the token matches every wait which the timeout can find.
+   */
+  (void) token;
+  (void) mask;
+#endif
 
   _Thread_queue_Context_initialize( &queue_context );
   _Thread_queue_Context_clear_priority_updates( &queue_context );
@@ -54,31 +75,22 @@ void _Thread_Continue( Thread_Control *the_thread, Status_Control status )
 
   wait_flags = _Thread_Wait_flags_get( the_thread );
 
-  if ( wait_flags != THREAD_WAIT_STATE_READY ) {
-    Thread_Wait_flags wait_class;
-    bool              success;
+  if (
+    ( wait_flags & THREAD_WAIT_CLASS_MASK ) != 0U
+#if defined( RTEMS_SMP )
+    && ( ( wait_flags ^ token ) & mask ) == 0U
+#endif
+  ) {
+    Thread_Wait_flags previous_wait_flags;
 
     _Thread_Wait_cancel( the_thread, &queue_context );
 
     the_thread->Wait.return_code = status;
-
-    wait_class = wait_flags & THREAD_WAIT_CLASS_MASK;
-    success = _Thread_Wait_flags_try_change_release(
+    previous_wait_flags = _Thread_Wait_flags_exchange_release(
       the_thread,
-      wait_class | THREAD_WAIT_STATE_INTEND_TO_BLOCK,
-      THREAD_WAIT_STATE_READY
+      _Thread_Wait_flags_end( wait_flags )
     );
-
-    if ( success ) {
-      unblock = false;
-    } else {
-      _Assert(
-        _Thread_Wait_flags_get( the_thread ) ==
-        ( wait_class | THREAD_WAIT_STATE_BLOCKED )
-      );
-      _Thread_Wait_flags_set( the_thread, THREAD_WAIT_STATE_READY );
-      unblock = true;
-    }
+    unblock = ( previous_wait_flags & THREAD_WAIT_STATE_BLOCKED ) != 0U;
   } else {
     unblock = false;
   }
@@ -98,7 +110,12 @@ void _Thread_Continue( Thread_Control *the_thread, Status_Control status )
   }
 }
 
-void _Thread_Timeout( Watchdog_Control *the_watchdog )
+void _Thread_Continue( Thread_Control *the_thread, Status_Control status )
+{
+  _Thread_Do_continue( the_thread, status, 0, 0 );
+}
+
+void _Thread_Timeout( Watchdog_Control *the_watchdog, unsigned int token )
 {
   Thread_Control *the_thread;
 
@@ -107,5 +124,10 @@ void _Thread_Timeout( Watchdog_Control *the_watchdog )
     Thread_Control,
     Timer.Watchdog
   );
-  _Thread_Continue( the_thread, STATUS_TIMEOUT );
+  _Thread_Do_continue(
+    the_thread,
+    STATUS_TIMEOUT,
+    token,
+    THREAD_WAIT_GENERATION_MASK
+  );
 }

@@ -13,7 +13,7 @@
  *  COPYRIGHT (c) 1989-2008.
  *  On-Line Applications Research Corporation (OAR).
  *
- *  Copyright (C) 2014, 2017 embedded brains GmbH & Co. KG
+ *  Copyright (C) 2014, 2026 embedded brains GmbH & Co. KG
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -2256,55 +2256,72 @@ static inline void _Thread_Wait_cancel(
 /**
  * @brief Mask to get the thread wait state flags.
  */
-#define THREAD_WAIT_STATE_MASK 0xffU
+#define THREAD_WAIT_STATE_MASK 0x1U
 
 /**
- * @brief Indicates that the thread does not wait on something.
+ * @brief Indicates that the thread did not complete a blocking operation.
  *
- * In this wait state, the wait class is zero.  This wait state is set
- * initially by _Thread_Initialize() and after each wait operation once the
- * thread is ready again.
+ * A wait class of zero means the thread waits on nothing.  A wait class which
+ * is not zero means the thread started a wait and did not block yet.  A
+ * blocking operation consists of an optional watchdog initialization and the
+ * setting of the appropriate thread blocking state with the corresponding
+ * scheduler block operation.
  */
 #define THREAD_WAIT_STATE_READY 0x0U
 
 /**
- * @brief Indicates that the thread begins with the blocking operation.
- *
- * A blocking operation consists of an optional watchdog initialization and the
- * setting of the appropriate thread blocking state with the corresponding
- * scheduler block operation.
- */
-#define THREAD_WAIT_STATE_INTEND_TO_BLOCK 0x1U
-
-/**
  * @brief Indicates that the thread completed the blocking operation.
  */
-#define THREAD_WAIT_STATE_BLOCKED 0x2U
+#define THREAD_WAIT_STATE_BLOCKED 0x1U
 
 /**
  * @brief Mask to get the thread wait class flags.
  */
-#define THREAD_WAIT_CLASS_MASK 0xff00U
+#define THREAD_WAIT_CLASS_MASK 0x3eU
+
+/**
+ * @brief Indicates that the thread waits for a thread queue.
+ */
+#define THREAD_WAIT_CLASS_QUEUE 0x2U
 
 /**
  * @brief Indicates that the thread waits for an event.
  */
-#define THREAD_WAIT_CLASS_EVENT 0x100U
+#define THREAD_WAIT_CLASS_EVENT 0x4U
 
 /**
  * @brief Indicates that the thread waits for a system event.
  */
-#define THREAD_WAIT_CLASS_SYSTEM_EVENT 0x200U
-
-/**
- * @brief Indicates that the thread waits for an object.
- */
-#define THREAD_WAIT_CLASS_OBJECT 0x400U
+#define THREAD_WAIT_CLASS_SYSTEM_EVENT 0x8U
 
 /**
  * @brief Indicates that the thread waits for a period.
  */
-#define THREAD_WAIT_CLASS_PERIOD 0x800U
+#define THREAD_WAIT_CLASS_PERIOD 0x10U
+
+/**
+ * @brief Indicates that the thread waits for a point in time.
+ */
+#define THREAD_WAIT_CLASS_TIME 0x20U
+
+/**
+ * @brief Mask to get the thread wait state and the thread wait class.
+ */
+#define THREAD_WAIT_MASK ( THREAD_WAIT_STATE_MASK | THREAD_WAIT_CLASS_MASK )
+
+/**
+ * @brief Mask to get the generation of the thread wait flags.
+ *
+ * The generation names one wait of a thread.  It steps at the end of every
+ * wait.  A party which took the generation of a wait can therefore tell that
+ * wait from every later wait of the thread.
+ */
+#define THREAD_WAIT_GENERATION_MASK 0xffffffc0U
+
+/**
+ * @brief The step of the generation of the thread wait flags.
+ */
+#define THREAD_WAIT_GENERATION_STEP 0x40U
 
 /**
  * @brief Sets the thread's wait flags.
@@ -2404,6 +2421,109 @@ static inline bool _Thread_Wait_flags_try_change_release(
 }
 
 /**
+ * @brief Exchanges the thread wait flags with release semantics.
+ *
+ * The caller must own the thread wait lock.
+ *
+ * @param[in, out] the_thread is the thread.
+ *
+ * @param new_flags are the new thread wait flags.
+ *
+ * @return Returns the thread wait flags before the exchange.
+ */
+static inline Thread_Wait_flags _Thread_Wait_flags_exchange_release(
+  Thread_Control   *the_thread,
+  Thread_Wait_flags new_flags
+)
+{
+  _Assert( _ISR_Get_level() != 0 );
+
+#if defined( RTEMS_SMP )
+  return _Atomic_Exchange_uint(
+    &the_thread->Wait.flags,
+    new_flags,
+    ATOMIC_ORDER_RELEASE
+  );
+#else
+  Thread_Wait_flags flags;
+
+  flags = the_thread->Wait.flags;
+  the_thread->Wait.flags = new_flags;
+
+  return flags;
+#endif
+}
+
+/**
+ * @brief Starts a wait of the thread.
+ *
+ * The routine adds the wait class to the thread wait flags of the thread.  It
+ * reads the flags and writes them back.  A thread which waits on nothing has
+ * no other writer of its flags, so the caller needs no lock.
+ *
+ * @param[in, out] the_thread is the thread.
+ *
+ * @param wait_class is the wait class of the new wait.
+ *
+ * @return Returns the thread wait flags of the new wait.
+ */
+static inline Thread_Wait_flags _Thread_Wait_flags_start(
+  Thread_Control   *the_thread,
+  Thread_Wait_flags wait_class
+)
+{
+  Thread_Wait_flags flags;
+
+  flags = _Thread_Wait_flags_get( the_thread );
+  _Assert( ( flags & THREAD_WAIT_MASK ) == 0U );
+  flags |= wait_class;
+  _Thread_Wait_flags_set( the_thread, flags );
+
+  return flags;
+}
+
+/**
+ * @brief Starts a wait of the thread which completed the blocking operation.
+ *
+ * The routine works like _Thread_Wait_flags_start() and adds
+ * THREAD_WAIT_STATE_BLOCKED.
+ *
+ * @param[in, out] the_thread is the thread.
+ *
+ * @param wait_class is the wait class of the new wait.
+ *
+ * @return Returns the thread wait flags of the new wait.
+ */
+static inline Thread_Wait_flags _Thread_Wait_flags_start_blocked(
+  Thread_Control   *the_thread,
+  Thread_Wait_flags wait_class
+)
+{
+  return _Thread_Wait_flags_start(
+    the_thread,
+    wait_class | THREAD_WAIT_STATE_BLOCKED
+  );
+}
+
+/**
+ * @brief Gets the thread wait flags which end the wait.
+ *
+ * The wait class and the wait state are zero in the return value.  The
+ * generation is the generation of the next wait of the thread.
+ *
+ * @param wait_flags are the thread wait flags of the wait which ends.
+ *
+ * @return Returns the thread wait flags which end the wait.
+ */
+static inline Thread_Wait_flags _Thread_Wait_flags_end(
+  Thread_Wait_flags wait_flags
+)
+{
+  return ( wait_flags + THREAD_WAIT_GENERATION_STEP ) &
+         THREAD_WAIT_GENERATION_MASK;
+}
+
+/**
  * @brief Tries to change the thread wait flags with acquire semantics.
  *
  * In case the wait flags are equal to the expected wait flags, then the wait
@@ -2496,7 +2616,7 @@ void _Thread_Continue( Thread_Control *the_thread, Status_Control status );
  *
  * @param the_watchdog The thread timer watchdog.
  */
-void _Thread_Timeout( Watchdog_Control *the_watchdog );
+void _Thread_Timeout( Watchdog_Control *the_watchdog, unsigned int token );
 
 /**
  * @brief Initializes the thread timer.
@@ -2520,11 +2640,13 @@ static inline void _Thread_Timer_initialize(
  * @param[in, out] the_thread The thread to add the timeout ticks to.
  * @param cpu The cpu for the operation.
  * @param ticks The ticks to add to the timeout ticks.
+ * @param token are the thread wait flags of the wait which the timeout ends.
  */
 static inline void _Thread_Add_timeout_ticks(
   Thread_Control   *the_thread,
   Per_CPU_Control  *cpu,
-  Watchdog_Interval ticks
+  Watchdog_Interval ticks,
+  Thread_Wait_flags token
 )
 {
   ISR_lock_Context lock_context;
@@ -2533,6 +2655,7 @@ static inline void _Thread_Add_timeout_ticks(
 
   the_thread->Timer.header = &cpu->Watchdog.Header[ PER_CPU_WATCHDOG_TICKS ];
   the_thread->Timer.Watchdog.routine = _Thread_Timeout;
+  the_thread->Timer.Watchdog.token = token;
   _Watchdog_Per_CPU_insert_ticks( &the_thread->Timer.Watchdog, cpu, ticks );
 
   _ISR_lock_Release_and_ISR_enable( &the_thread->Timer.Lock, &lock_context );
@@ -2545,12 +2668,14 @@ static inline void _Thread_Add_timeout_ticks(
  * @param cpu The cpu to get the watchdog header from.
  * @param routine The watchdog routine for the thread.
  * @param expire Expiration for the watchdog.
+ * @param token are the thread wait flags of the wait which the timeout ends.
  */
 static inline void _Thread_Timer_insert_realtime(
   Thread_Control                *the_thread,
   Per_CPU_Control               *cpu,
   Watchdog_Service_routine_entry routine,
-  uint64_t                       expire
+  uint64_t                       expire,
+  Thread_Wait_flags              token
 )
 {
   ISR_lock_Context lock_context;
@@ -2561,6 +2686,7 @@ static inline void _Thread_Timer_insert_realtime(
   header = &cpu->Watchdog.Header[ PER_CPU_WATCHDOG_REALTIME ];
   the_thread->Timer.header = header;
   the_thread->Timer.Watchdog.routine = routine;
+  the_thread->Timer.Watchdog.token = token;
   _Watchdog_Per_CPU_insert( &the_thread->Timer.Watchdog, cpu, header, expire );
 
   _ISR_lock_Release_and_ISR_enable( &the_thread->Timer.Lock, &lock_context );

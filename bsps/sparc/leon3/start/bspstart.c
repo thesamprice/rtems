@@ -49,10 +49,11 @@
 #include <rtems/sysinit.h>
 
 #if defined( RTEMS_SMP ) || defined( RTEMS_MULTIPROCESSING )
-/* Irq used by shared memory driver and for inter-processor interrupts.
- * Can be overridden by being defined in the application.
+/*
+ * The bus line of the shared memory driver and of the inter-processor
+ * interrupts.  An application may define it.
  */
-const unsigned char LEON3_mp_irq __attribute__(( weak )) = 14;
+const unsigned char LEON3_mp_irq __attribute__(( weak )) = LEON3_IPI_BUS_LINE;
 #endif
 
 /*
@@ -116,5 +117,39 @@ RTEMS_SYSINIT_ITEM(
   bsp_interrupt_initialize,
   RTEMS_SYSINIT_DRVMGR_LEVEL_1,
   RTEMS_SYSINIT_ORDER_LAST_BUT_5
+);
+
+/* If RTEMS_DRVMGR_STARTUP is defined extra code is added that
+ * registers the GRLIB AMBA PnP bus driver as root driver.
+ */
+#include <drvmgr/drvmgr.h>
+#include <grlib/ambapp_bus_grlib.h>
+
+/* Driver resources configuration for AMBA root bus. It is declared weak
+ * so that the user may override it, if the defualt settings are not
+ * enough.
+ */
+struct drvmgr_bus_res grlib_drv_resources __attribute__(( weak )) = {
+  .next = NULL,
+  .resource = {
+    DRVMGR_RES_EMPTY,
+  }
+};
+
+/* GRLIB AMBA bus configuration (the LEON3 root bus configuration) */
+struct grlib_config grlib_bus_config;
+
+static void ambapp_grlib_root_initialize( void )
+{
+  /* Register Root bus, Use GRLIB AMBA PnP bus as root bus for LEON3 */
+  grlib_bus_config.abus = ambapp_plb();
+  grlib_bus_config.resources = &grlib_drv_resources;
+  ambapp_grlib_root_register( &grlib_bus_config );
+}
+
+RTEMS_SYSINIT_ITEM(
+  ambapp_grlib_root_initialize,
+  RTEMS_SYSINIT_BSP_START,
+  RTEMS_SYSINIT_ORDER_SECOND
 );
 #endif

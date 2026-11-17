@@ -304,7 +304,7 @@ int pthread_create(
 #if defined( RTEMS_SCORE_THREAD_HAS_SCHEDULER_CHANGE_INHIBITORS )
     the_thread->is_scheduler_change_inhibited = true;
 #endif
-    _POSIX_Threads_Sporadic_timer( &api->Sporadic.Timer );
+    _POSIX_Threads_Sporadic_timer( &api->Sporadic.Timer, 0 );
   }
 #endif
 
@@ -316,11 +316,11 @@ int pthread_create(
 
   #if defined( RTEMS_DEBUG )
   /*
-     *  _Thread_Start only fails if the thread was in the incorrect state
-     *
-     *  NOTE: This can only happen if someone slips in and touches the
-     *        thread while we are creating it.
-     */
+   *  _Thread_Start only fails if the thread was in the incorrect state
+   *
+   *  NOTE: This can only happen if someone slips in and touches the
+   *        thread while we are creating it.
+   */
   if ( status != STATUS_SUCCESSFUL ) {
     _Thread_Free( &_POSIX_Threads_Information, the_thread );
     _Objects_Allocator_unlock();
@@ -338,11 +338,16 @@ int pthread_create(
 }
 
 #if defined( RTEMS_POSIX_API )
-void _POSIX_Threads_Sporadic_timer( Watchdog_Control *watchdog )
+void _POSIX_Threads_Sporadic_timer(
+  Watchdog_Control *watchdog,
+  unsigned int      token
+)
 {
   POSIX_API_Control   *api;
   Thread_Control      *the_thread;
   Thread_queue_Context queue_context;
+
+  (void) token;
 
   api = RTEMS_CONTAINER_OF( watchdog, POSIX_API_Control, Sporadic.Timer );
   the_thread = api->Sporadic.thread;
@@ -475,22 +480,22 @@ static bool _POSIX_Threads_Create_extension(
    */
   if ( _Objects_Get_API( created->Object.id ) == OBJECTS_INTERNAL_API ) {
     /*
-       * Ensure internal (especially IDLE) is handled first.
-       *
-       * Block signals for all internal threads -- especially IDLE.
-       */
+     * Ensure internal (especially IDLE) is handled first.
+     *
+     * Block signals for all internal threads -- especially IDLE.
+     */
     api->signals_unblocked = 0;
   } else if (
     _Objects_Get_API( executing->Object.id ) == OBJECTS_INTERNAL_API
   ) {
     /*
-       * Threads being created while an internal thread is executing
-       * should only happen for the initialization threads/tasks.
-       *
-       * Default state (signals unblocked) for all Initialization tasks
-       * and POSIX threads. We should not inherit from IDLE which is
-       * what appears to be executing during initialization.
-       */
+     * Threads being created while an internal thread is executing
+     * should only happen for the initialization threads/tasks.
+     *
+     * Default state (signals unblocked) for all Initialization tasks
+     * and POSIX threads. We should not inherit from IDLE which is
+     * what appears to be executing during initialization.
+     */
     api->signals_unblocked = SIGNAL_ALL_MASK;
   } else {
     const POSIX_API_Control *executing_api;

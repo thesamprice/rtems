@@ -11,7 +11,7 @@
 
 /*  COPYRIGHT (c) 1989-2008.
  *  On-Line Applications Research Corporation (OAR).
- *  Copyright (c) 2016 embedded brains GmbH & Co. KG
+ *  Copyright (C) 2016, 2026 embedded brains GmbH & Co. KG
  *  COPYRIGHT (c) 2016 Kuan-Hsun Chen.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -61,12 +61,6 @@ extern "C" {
  * @{
  */
 
-#define RATE_MONOTONIC_INTEND_TO_BLOCK \
-  ( THREAD_WAIT_CLASS_PERIOD | THREAD_WAIT_STATE_INTEND_TO_BLOCK )
-
-#define RATE_MONOTONIC_BLOCKED \
-  ( THREAD_WAIT_CLASS_PERIOD | THREAD_WAIT_STATE_BLOCKED )
-
 /**
  *  @brief Allocates a period control block from
  *  the inactive chain of free period control blocks.
@@ -113,7 +107,7 @@ static inline Rate_monotonic_Control *_Rate_monotonic_Get(
   ) _Objects_Get( id, lock_context, &_Rate_monotonic_Information );
 }
 
-void _Rate_monotonic_Timeout( Watchdog_Control *watchdog );
+void _Rate_monotonic_Timeout( Watchdog_Control *watchdog, unsigned int token );
 
 /**
  * @brief Gets the rate monotonic CPU usage status.
@@ -144,6 +138,49 @@ void _Rate_monotonic_Cancel(
   Thread_Control         *owner,
   ISR_lock_Context       *lock_context
 );
+
+/**
+ * @brief Arms the timer of the period.
+ *
+ * The generation of the period steps, so the token of the timer names this
+ * schedule of it.
+ *
+ * @param[in, out] the_period is the period.
+ * @param cpu is the processor which holds the watchdog header.
+ * @param length is the length of the schedule in clock ticks.
+ *
+ * @return Returns the expiration time point of the schedule.
+ */
+static inline uint64_t _Rate_monotonic_Insert_timer(
+  Rate_monotonic_Control *the_period,
+  Per_CPU_Control        *cpu,
+  rtems_interval          length
+)
+{
+  unsigned int generation;
+
+  generation = the_period->timer_generation + 1U;
+  the_period->timer_generation = generation;
+  the_period->Timer.token = generation;
+
+  return _Watchdog_Per_CPU_insert_ticks( &the_period->Timer, cpu, length );
+}
+
+/**
+ * @brief Takes the timer of the period out of the tree.
+ *
+ * The generation of the period steps, so the token of the schedule which ends
+ * here names no schedule of the timer.
+ *
+ * @param[in, out] the_period is the period.
+ */
+static inline void _Rate_monotonic_Remove_timer(
+  Rate_monotonic_Control *the_period
+)
+{
+  ++the_period->timer_generation;
+  _Watchdog_Per_CPU_remove_ticks( &the_period->Timer );
+}
 
 static inline void _Rate_monotonic_Reset_min_time(
   Timestamp_Control *min_time

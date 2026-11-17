@@ -14,7 +14,7 @@
  *  COPYRIGHT (c) 1989-2014.
  *  On-Line Applications Research Corporation (OAR).
  *
- *  Copyright (C) 2014, 2016 embedded brains GmbH & Co. KG
+ *  Copyright (C) 2014, 2026 embedded brains GmbH & Co. KG
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -112,7 +112,7 @@ extern "C" {
 #define RTEMS_SCORE_THREAD_REAL_PRIORITY_MAY_BE_INACTIVE
 #endif
 
-#if defined( RTEMS_POSIX_API ) && defined( RTEMS_SMP )
+#if defined( RTEMS_POSIX_API )
 /**
  * @brief This define enables support to inhibit scheduler changes.
  *
@@ -233,8 +233,8 @@ typedef struct {
   Thread_Entry_information Entry;
   /*-------------- initial execution modes ----------------- */
   /** This field indicates whether the thread was preemptible when
-    * it started.
-    */
+   * it started.
+   */
   bool                     is_preemptible;
 
   /**
@@ -439,13 +439,14 @@ typedef union {
  * class and state of a thread.
  *
  * The mutually exclusive wait class flags are
+ * - @ref THREAD_WAIT_CLASS_QUEUE,
  * - @ref THREAD_WAIT_CLASS_EVENT,
- * - @ref THREAD_WAIT_CLASS_SYSTEM_EVENT, and
- * - @ref THREAD_WAIT_CLASS_OBJECT.
+ * - @ref THREAD_WAIT_CLASS_SYSTEM_EVENT,
+ * - @ref THREAD_WAIT_CLASS_PERIOD, and
+ * - @ref THREAD_WAIT_CLASS_TIME.
  *
  * The mutually exclusive wait state flags are
- * - @ref THREAD_WAIT_STATE_INTEND_TO_BLOCK,
- * - @ref THREAD_WAIT_STATE_BLOCKED, and
+ * - @ref THREAD_WAIT_STATE_BLOCKED and
  * - @ref THREAD_WAIT_STATE_READY.
  */
 typedef unsigned int Thread_Wait_flags;

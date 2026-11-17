@@ -1,5 +1,14 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 
+/**
+ * @file
+ *
+ * @ingroup RTEMSBSPsARMBeagle
+ *
+ * @brief This source file contains the board initialization implementation
+ *   for the Beagle BSP.
+ */
+
 /*
  * Copyright (c) 2013 embedded brains GmbH & Co. KG
  *
@@ -39,6 +48,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <bsp/dcan_am335x.h>
 
 #include "bspdebug.h"
 
@@ -98,6 +108,8 @@ static void bbb_drivers_initialize(void)
   phandle_t node = rtems_ofw_peer(0);
 
   traverse_fdt_nodes(node);
+
+  rtems_am335x_dcan_initialize();
 }
 
 int beagle_get_node_unit(phandle_t node)

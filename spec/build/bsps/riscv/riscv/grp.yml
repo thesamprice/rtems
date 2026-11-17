@@ -23,6 +23,8 @@ links:
 - role: build-dependency
   uid: ../optextirqmax
 - role: build-dependency
+  uid: ../optplicprobeprio
+- role: build-dependency
   uid: ../grp
 - role: build-dependency
   uid: ../optrambegin
@@ -31,6 +33,12 @@ links:
 - role: build-dependency
   uid: ../optriscvmmuvirtualaddressbits
 - role: build-dependency
+  uid: ../optrnmivecregister
+- role: build-dependency
+  uid: ../optrnmivecaddress
+- role: build-dependency
+  uid: ../optrnmiveccsr
+- role: build-dependency
   uid: abi
 - role: build-dependency
   uid: obj
@@ -38,6 +46,8 @@ links:
   uid: objmmu
 - role: build-dependency
   uid: objsmp
+- role: build-dependency
+  uid: objsmrnmi
 - role: build-dependency
   uid: ../objsbi
 - role: build-dependency
@@ -69,9 +79,13 @@ links:
 - role: build-dependency
   uid: ../linkcmds
 - role: build-dependency
+  uid: ../linkcmdssmrnmi
+- role: build-dependency
   uid: ../linkcmdsbase
 - role: build-dependency
   uid: ../start
+- role: build-dependency
+  uid: ../optstartsavesp
 - role: build-dependency
   uid: ../../bspopts
 - role: build-dependency

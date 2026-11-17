@@ -16,11 +16,13 @@ install:
   - bsps/arm/beagle/include/bsp/bbb-gpio.h
   - bsps/arm/beagle/include/bsp/bbb-pwm.h
   - bsps/arm/beagle/include/bsp/beagleboneblack.h
+  - bsps/arm/beagle/include/bsp/dcan_am335x.h
   - bsps/arm/beagle/include/bsp/i2c.h
   - bsps/arm/beagle/include/bsp/irq.h
   - bsps/arm/beagle/include/bsp/pwmss.h
   - bsps/arm/beagle/include/bsp/qep.h
   - bsps/arm/beagle/include/bsp/spi.h
+  - bsps/arm/beagle/include/bsp/bbb-adc.h
 - destination: ${BSP_INCLUDEDIR}/libcpu
   source:
   - bsps/arm/include/libcpu/am335x.h
@@ -34,6 +36,7 @@ source:
 - bsps/arm/beagle/clock/clock.c
 - bsps/arm/beagle/console/console-config.c
 - bsps/arm/beagle/gpio/bbb-gpio.c
+- bsps/arm/beagle/adc/bbb-adc.c
 - bsps/arm/beagle/i2c/bbb-i2c.c
 - bsps/arm/beagle/irq/irq.c
 - bsps/arm/beagle/pwm/pwm.c
@@ -44,6 +47,7 @@ source:
 - bsps/arm/beagle/start/bspdebug.c
 - bsps/arm/beagle/start/bspreset.c
 - bsps/arm/beagle/start/bspstart.c
+- bsps/arm/beagle/can/dcan_am335x.c
 - bsps/arm/beagle/start/bsp-soc-detect.c
 - bsps/arm/beagle/start/bspstarthooks.c
 - bsps/arm/beagle/start/bspstartmmu.c

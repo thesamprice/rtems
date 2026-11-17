@@ -81,13 +81,12 @@ typedef struct {
 
 static bool is_blocked( Thread_Wait_flags flags )
 {
-  return flags == ( THREAD_WAIT_CLASS_OBJECT | THREAD_WAIT_STATE_BLOCKED );
+  return flags == ( THREAD_WAIT_CLASS_QUEUE | THREAD_WAIT_STATE_BLOCKED );
 }
 
 static bool interrupts_blocking_op( Thread_Wait_flags flags )
 {
-  return flags ==
-         ( THREAD_WAIT_CLASS_OBJECT | THREAD_WAIT_STATE_INTEND_TO_BLOCK );
+  return flags == THREAD_WAIT_CLASS_QUEUE;
 }
 
 static T_interrupt_test_state interrupt( void *arg )
@@ -102,7 +101,7 @@ static T_interrupt_test_state interrupt( void *arg )
   }
 
   ctx = arg;
-  flags = _Thread_Wait_flags_get( ctx->thread );
+  flags = _Thread_Wait_flags_get( ctx->thread ) & THREAD_WAIT_MASK;
 
   if ( interrupts_blocking_op( flags ) ) {
     state = T_INTERRUPT_TEST_DONE;

@@ -23,11 +23,14 @@ links:
   uid: objsparcgr712rc
 - role: build-dependency
   uid: objsparcgr740
+- role: build-dependency
+  uid: objsparcleon3irq
+- role: build-dependency
+  uid: objsparcleon3irqmap
 source:
 - testsuites/validation/bsps/ts-validation-bsp-0.c
 stlib: []
 target: testsuites/validation/bsps/ts-validation-bsp-0.exe
 type: build
-use-after:
-- validation
+use-after: []
 use-before: []

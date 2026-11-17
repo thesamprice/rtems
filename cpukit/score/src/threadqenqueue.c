@@ -19,7 +19,7 @@
  *  COPYRIGHT (c) 1989-2014.
  *  On-Line Applications Research Corporation (OAR).
  *
- *  Copyright (C) 2015, 2016 embedded brains GmbH & Co. KG
+ *  Copyright (C) 2015, 2026 embedded brains GmbH & Co. KG
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -53,12 +53,6 @@
 #include <rtems/score/threadimpl.h>
 #include <rtems/score/status.h>
 #include <rtems/score/watchdogimpl.h>
-
-#define THREAD_QUEUE_INTEND_TO_BLOCK \
-  ( THREAD_WAIT_CLASS_OBJECT | THREAD_WAIT_STATE_INTEND_TO_BLOCK )
-
-#define THREAD_QUEUE_BLOCKED \
-  ( THREAD_WAIT_CLASS_OBJECT | THREAD_WAIT_STATE_BLOCKED )
 
 #if defined( RTEMS_SMP )
 /*
@@ -416,6 +410,7 @@ void _Thread_queue_Enqueue(
 )
 {
   Thread_queue_Deadlock_status deadlock_status;
+  Thread_Wait_flags            wait_flags;
   Per_CPU_Control             *cpu_self;
   bool                         success;
 
@@ -455,7 +450,8 @@ void _Thread_queue_Enqueue(
   _Thread_queue_Path_release( queue_context );
 
   the_thread->Wait.return_code = STATUS_SUCCESSFUL;
-  _Thread_Wait_flags_set( the_thread, THREAD_QUEUE_INTEND_TO_BLOCK );
+  wait_flags = _Thread_Wait_flags_start( the_thread, THREAD_WAIT_CLASS_QUEUE );
+  queue_context->timeout_token = wait_flags;
   cpu_self = _Thread_queue_Dispatch_disable( queue_context );
   _Thread_queue_Queue_release(
     queue,
@@ -480,13 +476,13 @@ void _Thread_queue_Enqueue(
    * may already changed our state with respect to the thread queue object.
    * The request could be satisfied or timed out.  This situation is indicated
    * by the thread wait flags.  Other parties must not modify our thread state
-   * as long as we are in the THREAD_QUEUE_INTEND_TO_BLOCK thread wait state,
-   * thus we have to cancel the blocking operation ourself if necessary.
+   * as long as the thread wait state is not THREAD_WAIT_STATE_BLOCKED, thus we
+   * have to cancel the blocking operation ourself if necessary.
    */
   success = _Thread_Wait_flags_try_change_acquire(
     the_thread,
-    THREAD_QUEUE_INTEND_TO_BLOCK,
-    THREAD_QUEUE_BLOCKED
+    wait_flags,
+    wait_flags | THREAD_WAIT_STATE_BLOCKED
   );
   if ( !success ) {
     _Thread_Remove_timer_and_unblock( the_thread, queue );
@@ -505,6 +501,7 @@ Status_Control _Thread_queue_Enqueue_sticky(
 )
 {
   Thread_queue_Deadlock_status deadlock_status;
+  Thread_Wait_flags            wait_flags;
   Per_CPU_Control             *cpu_self;
 
   _Assert( queue_context->enqueue_callout != NULL );
@@ -536,7 +533,8 @@ Status_Control _Thread_queue_Enqueue_sticky(
   _Thread_queue_Path_release( queue_context );
 
   the_thread->Wait.return_code = STATUS_SUCCESSFUL;
-  _Thread_Wait_flags_set( the_thread, THREAD_QUEUE_INTEND_TO_BLOCK );
+  wait_flags = _Thread_Wait_flags_start( the_thread, THREAD_WAIT_CLASS_QUEUE );
+  queue_context->timeout_token = wait_flags;
   cpu_self = _Thread_queue_Dispatch_disable( queue_context );
   _Thread_queue_Queue_release(
     queue,
@@ -560,10 +558,9 @@ Status_Control _Thread_queue_Enqueue_sticky(
   _Thread_Priority_update_and_make_sticky( the_thread );
   _Thread_Dispatch_enable( cpu_self );
 
-  while (
-    _Thread_Wait_flags_get_acquire( the_thread ) ==
-    THREAD_QUEUE_INTEND_TO_BLOCK
-  ) {
+  wait_flags = _Thread_Wait_flags_end( wait_flags );
+
+  while ( _Thread_Wait_flags_get_acquire( the_thread ) != wait_flags ) {
     /* Wait */
   }
 
@@ -596,38 +593,37 @@ bool _Thread_queue_MP_set_callout(
 
 static void _Thread_queue_Force_ready_again( Thread_Control *the_thread )
 {
+  Thread_Wait_flags wait_flags;
+
   /*
    * We must set the wait flags under protection of the current thread lock,
    * otherwise a _Thread_Timeout() running on another processor may interfere.
    */
-  _Thread_Wait_flags_set( the_thread, THREAD_WAIT_STATE_READY );
+  wait_flags = _Thread_Wait_flags_get( the_thread );
+  _Thread_Wait_flags_set( the_thread, _Thread_Wait_flags_end( wait_flags ) );
   _Thread_Wait_restore_default( the_thread );
 }
 
 static bool _Thread_queue_Make_ready_again( Thread_Control *the_thread )
 {
-  bool success;
-  bool unblock;
+  Thread_Wait_flags wait_flags;
+  Thread_Wait_flags previous_wait_flags;
 
   /*
    * We must update the wait flags under protection of the current thread lock,
    * otherwise a _Thread_Timeout() running on another processor may interfere.
    */
-  success = _Thread_Wait_flags_try_change_release(
-    the_thread,
-    THREAD_QUEUE_INTEND_TO_BLOCK,
-    THREAD_WAIT_STATE_READY
+  wait_flags = _Thread_Wait_flags_get( the_thread );
+  _Assert(
+    ( wait_flags & THREAD_WAIT_CLASS_MASK ) == THREAD_WAIT_CLASS_QUEUE
   );
-  if ( success ) {
-    unblock = false;
-  } else {
-    _Assert( _Thread_Wait_flags_get( the_thread ) == THREAD_QUEUE_BLOCKED );
-    _Thread_Wait_flags_set( the_thread, THREAD_WAIT_STATE_READY );
-    unblock = true;
-  }
+  previous_wait_flags = _Thread_Wait_flags_exchange_release(
+    the_thread,
+    _Thread_Wait_flags_end( wait_flags )
+  );
 
   _Thread_Wait_restore_default( the_thread );
-  return unblock;
+  return ( previous_wait_flags & THREAD_WAIT_STATE_BLOCKED ) != 0U;
 }
 
 /*
@@ -649,7 +645,10 @@ static bool _Thread_queue_Make_new_owner_ready_again(
 #if defined( RTEMS_SMP )
   return _Thread_queue_Make_ready_again( new_owner );
 #else
-  _Assert( _Thread_Wait_flags_get( new_owner ) == THREAD_QUEUE_BLOCKED );
+  _Assert(
+    ( _Thread_Wait_flags_get( new_owner ) & THREAD_WAIT_MASK ) ==
+    ( THREAD_WAIT_CLASS_QUEUE | THREAD_WAIT_STATE_BLOCKED )
+  );
   _Thread_queue_Force_ready_again( new_owner );
   return false;
 #endif
@@ -884,7 +883,8 @@ void _Thread_queue_Surrender_sticky(
    * Timeouts cannot interfere since we hold the thread queue lock.
    */
   _Assert(
-    _Thread_Wait_flags_get( new_owner ) == THREAD_QUEUE_INTEND_TO_BLOCK
+    ( _Thread_Wait_flags_get( new_owner ) & THREAD_WAIT_MASK ) ==
+    THREAD_WAIT_CLASS_QUEUE
   );
   _Thread_queue_Force_ready_again( new_owner );
 

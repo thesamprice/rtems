@@ -65,14 +65,14 @@ static void copy_trampoline(void)
 /**
  * @brief Waits for the Application Processor to set the flag.
  *
- * @param timeout_ms Timeout in miliseconds.
+ * @param timeout_ms Timeout in milliseconds.
  *
  * @return true if successful.
  */
 static bool wait_for_ap(uint32_t timeout_ms)
 {
   uint8_t chan2_value;
-  uint32_t pit_ticks = PIT_FREQUENCY/1000; /* a milisecond */
+  uint32_t pit_ticks = PIT_FREQUENCY/1000; /* a millisecond */
 
   PIT_CHAN2_ENABLE(chan2_value);
   PIT_CHAN2_WRITE_TICKS(pit_ticks);
@@ -108,7 +108,7 @@ bool _CPU_SMP_Start_processor(uint32_t cpu_index)
 uint32_t _CPU_SMP_Get_current_processor(void)
 {
   uint8_t lapic_id = lapic_get_id();
-  return amd64_lapic_to_cpu_map[lapic_id];
+  return bsp_lapic_to_cpu_map[lapic_id];
 }
 
 uint32_t _CPU_SMP_Initialize(void)
@@ -143,7 +143,7 @@ void smp_init_ap(void)
   Context_Control_fp* null_fp_context_p = &_CPU_Null_fp_context;
   _CPU_Context_restore_fp(&null_fp_context_p);
 
-  amd64_lapic_base[LAPIC_REGISTER_SPURIOUS] =
+  bsp_lapic_base[LAPIC_REGISTER_SPURIOUS] =
     LAPIC_SPURIOUS_ENABLE | BSP_VECTOR_SPURIOUS;
 
   lidt(&amd64_idtr);

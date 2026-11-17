@@ -93,14 +93,15 @@ typedef enum {
  * @see _Watchdog_Preinitialize().
  */
 #if defined( RTEMS_SMP )
-  #define WATCHDOG_INITIALIZER( routine )            \
-  { { { { NULL, NULL, NULL, WATCHDOG_INACTIVE } } }, \
-    &_Per_CPU_Information[ 0 ].per_cpu,              \
-    ( routine ),                                     \
+  #define WATCHDOG_INITIALIZER( routine )        \
+  { { { NULL, NULL, NULL, WATCHDOG_INACTIVE } }, \
+    &_Per_CPU_Information[ 0 ].per_cpu,          \
+    ( routine ),                                 \
+    0,                                           \
     0 }
 #else
   #define WATCHDOG_INITIALIZER( routine ) \
-  { { { { NULL, NULL, NULL, WATCHDOG_INACTIVE } } }, ( routine ), 0 }
+  { { { NULL, NULL, NULL, WATCHDOG_INACTIVE } }, ( routine ), 0, 0 }
 #endif
 
 /**
@@ -151,13 +152,13 @@ void _Watchdog_Tick( struct Per_CPU_Control *cpu );
  *
  * @param the_watchdog The watchdog to get the state of.
  *
- * @return The RTEMS_RB_COLOR of @a the_watchdog.
+ * @return The color of the red-black tree node of @a the_watchdog.
  */
 static inline Watchdog_State _Watchdog_Get_state(
   const Watchdog_Control *the_watchdog
 )
 {
-  return (Watchdog_State) RTEMS_RB_COLOR( &the_watchdog->Node.RBTree, Node );
+  return (Watchdog_State) _RBTree_Color( &the_watchdog->Node.RBTree );
 }
 
 /**
@@ -171,7 +172,7 @@ static inline void _Watchdog_Set_state(
   Watchdog_State    state
 )
 {
-  RTEMS_RB_COLOR( &the_watchdog->Node.RBTree, Node ) = state;
+  _RBTree_Set_color( &the_watchdog->Node.RBTree, (int) state );
 }
 
 /**
@@ -227,6 +228,7 @@ static inline void _Watchdog_Preinitialize(
 {
   _Watchdog_Set_CPU( the_watchdog, cpu );
   _Watchdog_Set_state( the_watchdog, WATCHDOG_INACTIVE );
+  the_watchdog->token = 0;
 
 #if defined( RTEMS_DEBUG )
   the_watchdog->routine = NULL;
@@ -240,7 +242,7 @@ static inline void _Watchdog_Preinitialize(
  * The watchdog must be inactive.
  *
  * @param[out] the_watchdog The watchdog to initialize.
- * @param routing The service routine for @a the_watchdog.
+ * @param routine The service routine for @a the_watchdog.
  */
 static inline void _Watchdog_Initialize(
   Watchdog_Control              *the_watchdog,
@@ -252,7 +254,7 @@ static inline void _Watchdog_Initialize(
 }
 
 /**
- * @brief Calls the routine of each not expired watchdog control node.
+ * @brief Calls the routine of each expired watchdog control node.
  *
  * @param header The watchdog header.
  * @param first The first watchdog control node.
@@ -352,7 +354,7 @@ static inline uint64_t _Watchdog_Cancel(
  * @param the_watchdog The watchdog for the verification.
  *
  * @retval true The watchdog is scheduled.
- * @retval false The watchdog is inactive.
+ * @retval false The watchdog is not scheduled.
  */
 static inline bool _Watchdog_Is_scheduled(
   const Watchdog_Control *the_watchdog
@@ -400,7 +402,7 @@ static inline void _Watchdog_Next_first(
   right = _RBTree_Right( &first->Node.RBTree );
 
   if ( right != NULL ) {
-    _Assert( RTEMS_RB_COLOR( right, Node ) == RTEMS_RB_RED );
+    _Assert( _RBTree_Color( right ) == RTEMS_RB_RED );
     _Assert( _RBTree_Left( right ) == NULL );
     _Assert( _RBTree_Right( right ) == NULL );
     header->first = right;
@@ -430,7 +432,7 @@ static inline void _Watchdog_Next_first(
  * @brief The maximum number of seconds representable in the nanoseconds
  * watchdog format.
  *
- * We have 2**34 bits for the seconds part.
+ * We have 34 bits for the seconds part.
  */
 #define WATCHDOG_MAX_SECONDS 0x3ffffffff
 
@@ -585,7 +587,7 @@ static inline uint64_t _Watchdog_Ticks_from_sbintime( int64_t sbt )
 {
   uint64_t ticks = ( sbt >> 32 ) << WATCHDOG_BITS_FOR_1E9_NANOSECONDS;
 
-  ticks |= ( (uint64_t) 1000000000 * (uint32_t) sbt ) >> 32;
+  ticks |= ( (uint64_t) WATCHDOG_NANOSECONDS_PER_SECOND * (uint32_t) sbt ) >> 32;
 
   return ticks;
 }
@@ -688,7 +690,7 @@ static inline uint64_t _Watchdog_Per_CPU_insert(
  *
  * @param[in, out] the_watchdog The watchdog to remove.
  * @param cpu The cpu to remove the watchdog from.
- * @param[in, out] The scheduled watchdogs.
+ * @param[in, out] header The scheduled watchdogs.
  */
 static inline void _Watchdog_Per_CPU_remove(
   Watchdog_Control *the_watchdog,
