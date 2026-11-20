@@ -119,6 +119,9 @@ typedef struct {
    * is set, so they are the only software-raisable interrupts.
    */
   uint32_t intc_num_sw_intr;
+
+  /** @brief The interrupt controller input of the AXI UART Lite. */
+  uint32_t uart_irq;
 } mbv_config;
 
 /**

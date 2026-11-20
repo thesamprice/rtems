@@ -35,6 +35,7 @@
 
 #include <bsp.h>
 #include <bsp/console-termios.h>
+#include <bsp/irq.h>
 #include <bsp/mbv.h>
 
 #include <rtems/bspIo.h>
@@ -48,16 +49,19 @@ static uart_lite_context mbv_uart_lite_instance = {
 };
 
 /*
- * The register base address is not available as a constant expression, so it
- * cannot be part of the static initializer above.  Take it from the device
- * configuration when the console driver probes the device, which happens
- * before the device is used.
+ * The register base address and the interrupt vector are not available as a
+ * constant expression, so they cannot be part of the static initializer
+ * above.  Take them from the device configuration when the console driver
+ * probes the device, which happens before the device is used.
  */
 static bool mbv_console_probe( rtems_termios_device_context *base )
 {
   uart_lite_context *ctx = (uart_lite_context *) base;
 
   ctx->address = mbv_cfg.uart_base;
+#ifdef BSP_MICROBLAZE_FPGA_CONSOLE_INTERRUPTS
+  ctx->irq = MBV_INTERRUPT_VECTOR_EXTERNAL( mbv_cfg.uart_irq );
+#endif
 
   return true;
 }

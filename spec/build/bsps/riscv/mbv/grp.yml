@@ -33,6 +33,8 @@ links:
 - role: build-dependency
   uid: obj
 - role: build-dependency
+  uid: optconsoleinterrupts
+- role: build-dependency
   uid: optextirqmax
 - role: build-dependency
   uid: optintcbase
@@ -48,6 +50,8 @@ links:
   uid: opttimerfreq
 - role: build-dependency
   uid: optuartbase
+- role: build-dependency
+  uid: optuartirq
 - role: build-dependency
   uid: ../linkcmds
 - role: build-dependency
