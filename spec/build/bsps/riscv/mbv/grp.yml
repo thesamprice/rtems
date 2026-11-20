@@ -41,6 +41,8 @@ links:
 - role: build-dependency
   uid: optintcnuminputs
 - role: build-dependency
+  uid: optintcnumswintr
+- role: build-dependency
   uid: opttimerbase
 - role: build-dependency
   uid: opttimerfreq

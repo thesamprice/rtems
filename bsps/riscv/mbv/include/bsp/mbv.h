@@ -109,6 +109,16 @@ typedef struct {
    * minus one are connected to peripherals.
    */
   uint32_t intc_num_intr_inputs;
+
+  /**
+   * @brief The number of software interrupts of the AXI Interrupt Controller.
+   *
+   * This is the C_NUM_SW_INTR configuration.  The software interrupts are
+   * the interrupt controller inputs directly above the hardware inputs.
+   * Unlike the hardware inputs, they can be set in the ISR after the HIE bit
+   * is set, so they are the only software-raisable interrupts.
+   */
+  uint32_t intc_num_sw_intr;
 } mbv_config;
 
 /**

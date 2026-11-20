@@ -47,5 +47,6 @@ mbv_config mbv_cfg = {
   .uart_base = (uintptr_t) MBV_UART_BASE,
   .timer_frequency = MBV_TIMER_FREQUENCY,
   .intc_kind_of_edge = MBV_INTC_KIND_OF_EDGE,
-  .intc_num_intr_inputs = MBV_INTC_NUM_INTR_INPUTS
+  .intc_num_intr_inputs = MBV_INTC_NUM_INTR_INPUTS,
+  .intc_num_sw_intr = MBV_INTC_NUM_SW_INTR
 };

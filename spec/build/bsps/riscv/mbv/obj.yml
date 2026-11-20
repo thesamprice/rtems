@@ -11,6 +11,7 @@ install:
 - destination: ${BSP_INCLUDEDIR}
   source:
   - bsps/riscv/mbv/include/bsp.h
+  - bsps/riscv/mbv/include/tm27.h
 - destination: ${BSP_INCLUDEDIR}/bsp
   source:
   - bsps/include/bsp/xil-compat-common.h

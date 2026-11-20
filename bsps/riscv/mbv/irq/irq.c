@@ -48,10 +48,30 @@ static uint32_t mbv_intc_input_mask( rtems_vector_number vector )
   return UINT32_C( 1 ) << vector;
 }
 
+/*
+ * The software interrupts (C_NUM_SW_INTR) are the interrupt controller inputs
+ * directly above the hardware inputs (C_NUM_INTR_INPUTS).  Writing a one to
+ * their ISR bit raises them, also after the HIE bit is set, and writing a one
+ * to their IAR bit clears them.  See the AXI INTC product guide (PG099).
+ */
+static uint32_t mbv_intc_sw_intr_mask( void )
+{
+  uint64_t mask;
+
+  mask = ( UINT64_C( 1 ) << mbv_cfg.intc_num_sw_intr ) - 1;
+
+  return (uint32_t) ( mask << mbv_cfg.intc_num_intr_inputs );
+}
+
+static bool mbv_intc_is_sw_intr( rtems_vector_number vector )
+{
+  return ( mbv_intc_sw_intr_mask() & mbv_intc_input_mask( vector ) ) != 0;
+}
+
 void _RISCV_Interrupt_dispatch( uintptr_t mcause, Per_CPU_Control *cpu_self )
 {
   volatile Microblaze_INTC *intc;
-  uint32_t                  kind_of_edge;
+  uint32_t                  latched;
   uint32_t                  pending;
 
   (void) cpu_self;
@@ -72,7 +92,12 @@ void _RISCV_Interrupt_dispatch( uintptr_t mcause, Per_CPU_Control *cpu_self )
    * and the values do not change after the system initialization.
    */
   intc = mbv_cfg.intc;
-  kind_of_edge = mbv_cfg.intc_kind_of_edge;
+
+  /*
+   * The software interrupts are latched in the ISR like edge-triggered
+   * inputs, there is no device to clear them at.
+   */
+  latched = mbv_cfg.intc_kind_of_edge | mbv_intc_sw_intr_mask();
 
   /* The IPR is optional (C_HAS_IPR), so mask the ISR with the IER instead */
   while ( ( pending = ( intc->isr & intc->ier ) ) != 0 ) {
@@ -82,10 +107,11 @@ void _RISCV_Interrupt_dispatch( uintptr_t mcause, Per_CPU_Control *cpu_self )
     vector = (rtems_vector_number) __builtin_ctz( pending );
     mask = mbv_intc_input_mask( vector );
 
-    if ( ( kind_of_edge & mask ) != 0 ) {
+    if ( ( latched & mask ) != 0 ) {
       /*
-       * Edge-triggered input: acknowledge before the handler runs so that a
-       * new edge occurring while the handler executes is latched again.
+       * Edge-triggered input or software interrupt: acknowledge before the
+       * handler runs so that a new edge or raise occurring while the handler
+       * executes is latched again.
        */
       intc->iar = mask;
       bsp_interrupt_handler_dispatch( vector );
@@ -129,13 +155,12 @@ rtems_status_code bsp_interrupt_get_attributes(
   rtems_interrupt_attributes *attributes
 )
 {
-  (void) vector;
-
   attributes->is_maskable = true;
   attributes->can_enable = true;
   attributes->maybe_enable = true;
   attributes->can_disable = true;
   attributes->maybe_disable = true;
+  attributes->can_raise = mbv_intc_is_sw_intr( vector );
   attributes->cleared_by_acknowledge = true;
   attributes->can_clear = true;
 
@@ -157,9 +182,14 @@ rtems_status_code bsp_interrupt_is_pending(
 rtems_status_code bsp_interrupt_raise( rtems_vector_number vector )
 {
   bsp_interrupt_assert( bsp_interrupt_is_valid_vector( vector ) );
-  (void) vector;
 
-  return RTEMS_UNSATISFIED;
+  if ( !mbv_intc_is_sw_intr( vector ) ) {
+    return RTEMS_UNSATISFIED;
+  }
+
+  /* Writing a zero to an ISR bit has no effect, so no lock is needed */
+  MBV_INTC->isr = mbv_intc_input_mask( vector );
+  return RTEMS_SUCCESSFUL;
 }
 
 rtems_status_code bsp_interrupt_clear( rtems_vector_number vector )

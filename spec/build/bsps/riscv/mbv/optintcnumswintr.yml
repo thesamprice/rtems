@@ -1,0 +1,20 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-integer: null
+- define: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price
+default:
+- enabled-by: true
+  value: 2
+description: |
+  number of software interrupts of the Xilinx AXI Interrupt Controller
+  (C_NUM_SW_INTR); they occupy the interrupt controller inputs directly above
+  the hardware inputs and are the only software-raisable interrupts of the
+  platform
+enabled-by: true
+format: '{}'
+links: []
+name: MBV_INTC_NUM_SW_INTR
+type: build
