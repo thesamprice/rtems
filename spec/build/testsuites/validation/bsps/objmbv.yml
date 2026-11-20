@@ -1,0 +1,14 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+build-type: objects
+cflags: []
+copyrights:
+- Copyright (C) 2026 Samuel Price
+cppflags: []
+cxxflags: []
+enabled-by: bsps/riscv/mbv
+includes: []
+install: []
+links: []
+source:
+- testsuites/validation/bsps/mbv/tc-mbv-uartlite.c
+type: build
