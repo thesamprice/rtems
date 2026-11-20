@@ -15,6 +15,7 @@ install:
   source:
   - bsps/riscv/riscv/include/bsp/fe310-uart.h
   - bsps/riscv/riscv/include/bsp/irq.h
+  - bsps/riscv/riscv/include/bsp/irqimpl.h
   - bsps/riscv/riscv/include/bsp/riscv.h
   - bsps/riscv/riscv/include/bsp/k210.h
 - destination: ${BSP_INCLUDEDIR}/dev/serial
@@ -22,14 +23,15 @@ install:
   - bsps/riscv/riscv/include/dev/serial/htif.h
 links: []
 source:
-- bsps/riscv/riscv/clock/clockdrv.c
 - bsps/riscv/riscv/console/console-config.c
 - bsps/riscv/riscv/console/fe310-uart.c
 - bsps/riscv/riscv/console/htif.c
-- bsps/riscv/riscv/irq/irq.c
 - bsps/riscv/riscv/start/bsp_fatal_halt.c
 - bsps/riscv/riscv/start/bspstart.c
+- bsps/riscv/shared/clock/clockdrv.c
+- bsps/riscv/shared/fdt/riscv-fdt-irq.c
 - bsps/riscv/shared/fdt/riscv-fdt.c
+- bsps/riscv/shared/irq/irq.c
 - bsps/riscv/shared/start/bspgetworkarea.c
 - bsps/riscv/shared/start/sendipi.c
 - bsps/shared/cache/nocache.c

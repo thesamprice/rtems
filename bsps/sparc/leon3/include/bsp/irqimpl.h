@@ -113,7 +113,20 @@ extern uint32_t LEON3_IrqCtrl_EIrq;
 /**
  * @brief Initializes the interrupt controller for the boot processor.
  *
- * @param[in, out] regs is the IRQ(A)MP register block address.
+ * The function sets the processor interrupt mask and the processor interrupt
+ * force register of the boot processor to zero.  It writes all ones to the
+ * interrupt clear register, which clears every pending interrupt.  Where the
+ * BSP uses the interrupt map, the function copies the interrupt map entry of
+ * each bus line into the interrupt map copy of the BSP.  It masks each entry
+ * by the count of controller lines.  In SMP and multiprocessing
+ * configurations, it maps bus line 0 to the controller line defined by the
+ * BSP option LEON3_IPI_CONTROLLER_LINE.  Where the BSP determines the
+ * extended controller line at run time, the function reads it from the
+ * interrupt controller.
+ *
+ * @param[in, out] regs is the register block address of the first IRQ(A)MP
+ *   interrupt controller.  Only the first controller provides the interrupt
+ *   map registers.
  */
 void leon3_ext_irq_init( irqamp *regs );
 
@@ -143,42 +156,28 @@ static inline uint32_t bsp_irq_fixup( uint32_t irq )
   return eirq;
 }
 
-#ifdef LEON3_IRQAMP_IRQMAP
-/* Mapping from bus interrupt lines to IRQ(A)MP interrupt lines */
-extern rtems_vector_number
-  LEON3_IrqCtrl_Mapping[ BSP_INTERRUPT_VECTOR_MAX_MAP + 1 ];
-
 /**
- * @brief Gets the mapping from a bus interrupt line to an IRQ(A)MP interrupt line.
+ * @brief Gets the controller line mapped to a bus line.
  *
- * @param bus_line is the bus interrupt line number.
- * @param[out] irqmp_line is the IRQ(A)MP interrupt line number to which the bus interrupt line is mapped.
- *
- * @retval RTEMS_SUCCESSFUL if the mapping was retrieved successfully
- * @retval RTEMS_INVALID_NUMBER if the bus line number is invalid
- *
- */
-rtems_status_code leon3_irqmap_get(
-  rtems_vector_number  bus_line,
-  rtems_vector_number *irqmp_line
-);
-
-/**
- * @brief Gets the IRQ(A)MP interrupt line mapped to a bus interrupt line.
+ * Where the BSP uses no interrupt map, a bus line maps to the controller line
+ * of the same number.
  *
  * This function does not perform any validation on the bus line number and
  * should only be used when the caller is certain that it is valid.
  *
- * @param bus_line is the bus interrupt line number.
- * @return the IRQ(A)MP interrupt line to which the bus interrupt line is mapped.
+ * @param bus_line is the bus line number.
+ * @return the controller line to which the bus line is mapped.
  */
 static inline rtems_vector_number leon3_irqmap_get_unchecked(
   rtems_vector_number bus_line
 )
 {
+#if LEON3_IRQMAP_BUS_LINE_COUNT != 0
   return LEON3_IrqCtrl_Mapping[ bus_line ];
-}
+#else
+  return bus_line;
 #endif
+}
 
 /** @} */
 

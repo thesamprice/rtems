@@ -29,6 +29,7 @@ install:
   source:
   - bsps/powerpc/beatnik/start/linkcmds
   - bsps/powerpc/shared/start/linkcmds.share
+  - bsps/powerpc/shared/start/linkcmds.share_sections
 links:
 - role: build-dependency
   uid: ../../obj
@@ -38,6 +39,22 @@ links:
   uid: abi
 - role: build-dependency
   uid: ../../optconsolebaud
+- role: build-dependency
+  uid: ../optvmea16onvme
+- role: build-dependency
+  uid: ../optvmea16size
+- role: build-dependency
+  uid: ../optvmea24onvme
+- role: build-dependency
+  uid: ../optvmea24size
+- role: build-dependency
+  uid: ../optvmea32win0onvme
+- role: build-dependency
+  uid: ../optvmea32win0size
+- role: build-dependency
+  uid: ../optvmecsronvme
+- role: build-dependency
+  uid: ../optvmecsrsize
 - role: build-dependency
   uid: ../crti
 - role: build-dependency

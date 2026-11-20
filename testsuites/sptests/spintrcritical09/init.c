@@ -49,7 +49,8 @@ typedef struct {
 
 static bool is_interrupt_timeout( test_context *ctx )
 {
-  Thread_Wait_flags flags = _Thread_Wait_flags_get( ctx->thread );
+  Thread_Wait_flags flags = _Thread_Wait_flags_get( ctx->thread ) &
+                            THREAD_WAIT_MASK;
 
   return flags == THREAD_WAIT_STATE_READY;
 }
@@ -77,7 +78,7 @@ static T_interrupt_test_state interrupt( void *arg )
     _Watchdog_Per_CPU_remove( watchdog, cpu_self, header );
     _ISR_Local_enable( level );
 
-    ( *watchdog->routine )( watchdog );
+    ( *watchdog->routine )( watchdog, watchdog->token );
 
     if ( is_interrupt_timeout( ctx ) ) {
       state = T_INTERRUPT_TEST_DONE;

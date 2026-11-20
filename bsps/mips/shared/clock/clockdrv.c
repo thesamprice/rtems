@@ -28,7 +28,10 @@
 
 #include <bsp.h>
 #include <bsp/irq.h>
+#include <bsp/malta-counter.h>
 #include <bspopts.h>
+
+#include <rtems/timecounter.h>
 
 /* XXX convert to macros? Move to score/cpu? */
 void mips_set_timer(uint32_t timer_clock_interval);
@@ -39,25 +42,78 @@ uint32_t mips_get_timer(void);
 #define CLOCK_VECTOR_MASK    EXT_INT5
 #define CLOCK_VECTOR         (MIPS_INTERRUPT_BASE+0x7)
 
-extern uint32_t bsp_clicks_per_microsecond;
-
 static uint32_t mips_timer_rate = 0;
 
-/* refresh the internal CPU timer */
-#define Clock_driver_support_at_tick(arg) \
+static struct timecounter mips_tc;
+
+static uint32_t mips_tc_get_timecount( struct timecounter *tc )
+{
+  (void) tc;
+
+  return malta_counter_read();
+}
+
+/*
+ * The count register of the coprocessor carries the timecounter as well as the
+ * clock tick.  It is free running, so it resolves an interval below the tick,
+ * which the tick counter of the dummy timecounter cannot.
+ */
+static void mips_clock_initialize( void )
+{
+  mips_timer_rate = rtems_configuration_get_microseconds_per_tick() *
+    bsp_clicks_per_microsecond;
   mips_set_timer( mips_timer_rate );
+  mips_enable_in_interrupt_mask( CLOCK_VECTOR_MASK );
+
+  mips_tc.tc_get_timecount = mips_tc_get_timecount;
+  mips_tc.tc_counter_mask = 0xffffffff;
+  mips_tc.tc_frequency = malta_counter_frequency();
+  mips_tc.tc_quality = RTEMS_TIMECOUNTER_QUALITY_CLOCK_DRIVER;
+  rtems_timecounter_install( &mips_tc );
+}
+
+/*
+ * The number of counts which the next compare value must stay ahead of the
+ * counter.  It covers the distance from the read of the counter to the write
+ * of the compare register, which is a few instructions.
+ */
+#define MIPS_CLOCK_MIN_AHEAD 64
+
+/*
+ * Advance the compare register by the period rather than set it ahead of the
+ * counter.  A set at the tick adds the latency of the interrupt to every
+ * period, which makes the tick run long against the timecounter.
+ *
+ * A handler which runs late computes a compare value which the counter
+ * already passed.  The comparison then waits for the counter to run through
+ * its whole width.  That is 27 seconds at the frequency of this BSP, and the
+ * clock never catches up.  Take the counter as the base of the next period in
+ * that case.  The handler runs with interrupts disabled, so nothing extends
+ * the distance between the read of the counter and the write.
+ */
+static void mips_clock_at_tick( void )
+{
+  uint32_t compare;
+  uint32_t count;
+
+  __asm__ volatile ( "mfc0 %0, $11; nop" : "=r" ( compare ) );
+  compare += mips_timer_rate;
+  count = malta_counter_read();
+
+  if ( (int32_t) ( compare - count ) <= MIPS_CLOCK_MIN_AHEAD ) {
+    compare = count + mips_timer_rate;
+  }
+
+  __asm__ volatile ( "mtc0 %0, $11; nop" : : "r" ( compare ) );
+}
+
+#define Clock_driver_support_at_tick(arg) \
+  mips_clock_at_tick();
 
 #define Clock_driver_support_install_isr( _new ) \
   rtems_interrupt_handler_install(CLOCK_VECTOR, "PIT clock",0, _new, NULL)
 
 #define Clock_driver_support_initialize_hardware() \
-  do { \
-    mips_timer_rate = rtems_configuration_get_microseconds_per_tick() * \
-      bsp_clicks_per_microsecond; \
-    mips_set_timer( mips_timer_rate ); \
-    mips_enable_in_interrupt_mask(CLOCK_VECTOR_MASK); \
-  } while(0)
-
-#define CLOCK_DRIVER_USE_DUMMY_TIMECOUNTER
+  mips_clock_initialize()
 
 #include "../../../shared/dev/clock/clockimpl.h"

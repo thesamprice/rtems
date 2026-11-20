@@ -384,7 +384,7 @@ static bool BlockedForEvent( Context *ctx, Thread_Wait_flags flags )
 
 static bool IntendsToBlockForEvent( Context *ctx, Thread_Wait_flags flags )
 {
-  return flags == ( ctx->wait_class | THREAD_WAIT_STATE_INTEND_TO_BLOCK );
+  return flags == ctx->wait_class;
 }
 
 static bool IsReady( Thread_Wait_flags flags )
@@ -394,7 +394,9 @@ static bool IsReady( Thread_Wait_flags flags )
 
 static bool IsSatisfiedFlags( Context *ctx )
 {
-  return IsReady( _Thread_Wait_flags_get( ctx->runner_thread ) );
+  return IsReady(
+    _Thread_Wait_flags_get( ctx->runner_thread ) & THREAD_WAIT_MASK
+  );
 }
 
 static bool IsSatisfiedState( Context *ctx )
@@ -552,7 +554,7 @@ static T_interrupt_test_state Interrupt( void *arg )
   T_interrupt_test_state  previous_state;
 
   ctx = arg;
-  flags = _Thread_Wait_flags_get( ctx->runner_thread );
+  flags = _Thread_Wait_flags_get( ctx->runner_thread ) & THREAD_WAIT_MASK;
 
   if ( IntendsToBlockForEvent( ctx, flags ) ) {
     next_state = T_INTERRUPT_TEST_DONE;

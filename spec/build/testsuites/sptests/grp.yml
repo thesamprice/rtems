@@ -197,6 +197,8 @@ links:
   - role: build-dependency
     uid: spcpuset01
   - role: build-dependency
+    uid: spcpuusage01
+  - role: build-dependency
     uid: spcxx01
   - role: build-dependency
     uid: spedfsched01
@@ -456,8 +458,6 @@ links:
     uid: sptls04
   - role: build-dependency
     uid: sptod
-  - role: build-dependency
-    uid: sptree01
   - role: build-dependency
     uid: spunlimited01
   - role: build-dependency

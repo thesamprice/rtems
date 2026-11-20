@@ -54,11 +54,13 @@
 #include <libcpu/e500_mmu.h>
 #include <bsp/uart.h>
 #include <bsp/irq.h>
+#include <bsp/irq-generic.h>
 #include <bsp/pci.h>
 #include <bsp/vpd.h>
 #include <libcpu/cpuIdent.h>
 #include <bsp/vectors.h>
 #include <bsp/VME.h>
+#include <bsp/VMEConfig.h>
 #include <rtems/powerpc/powerpc.h>
 
 #define SHOW_MORE_INIT_SETTINGS
@@ -236,6 +238,7 @@ static void bsp_early( void )
   ppc_cpu_id_t         myCpu;
   ppc_cpu_revision_t   myCpuRevision;
   E500_tlb_va_cache_t *tlb;
+  uint32_t             ea;
 
 VpdBufRec          vpdData [] = {
  { .key = ProductIdent, .instance = 0, .buf = BSP_productIdent, .buflen = sizeof(BSP_productIdent) - 1 },
@@ -319,6 +322,18 @@ VpdBufRec          vpdData [] = {
       }
     }
 
+    for ( i=0, tlb=rtems_e500_tlb_va_cache, ea=_VME_A32_WIN0_ON_PCI;
+          i<NumberOf(rtems_e500_tlb_va_cache)
+          && ea < _VME_A32_WIN0_ON_PCI + BSP_VME_APERTURE_SIZE;
+          i++, tlb++ ) {
+      if ( !tlb->att.v && 0 == rtems_e500_wrtlb( i, ea, ea, 0x10000000,
+               E500_TLB_ATTR_WIMGE( FSL_EIS_MAS2_I | FSL_EIS_MAS2_G )
+             | E500_TLB_ATTR_PERM( FSL_EIS_MAS3_SR | FSL_EIS_MAS3_SW ) ) )
+        ea += 0x10000000;
+    }
+    if ( ea < _VME_A32_WIN0_ON_PCI + BSP_VME_APERTURE_SIZE )
+      printk("Unable to map VME windows in TLB1\n");
+
     /* clear all pending memory errors */
     _ccsr_wr32(0x2e40, 0xffffffff);
     /* enable checking for memory-select errors */
@@ -385,7 +400,7 @@ VpdBufRec          vpdData [] = {
   /*
    * Initialize RTEMS IRQ system
    */
-  BSP_rtems_irq_mng_init(0);
+  bsp_interrupt_initialize();
 
   if (1) {
     int i;

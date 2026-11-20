@@ -62,7 +62,7 @@ rtems_status_code _Event_Seize(
   rtems_event_set   seized_events;
   rtems_event_set   pending_events;
   bool              success;
-  Thread_Wait_flags intend_to_block;
+  Thread_Wait_flags wait_flags;
   Per_CPU_Control  *cpu_self;
 
   pending_events = event->pending_events;
@@ -84,8 +84,6 @@ rtems_status_code _Event_Seize(
     return RTEMS_UNSATISFIED;
   }
 
-  intend_to_block = wait_class | THREAD_WAIT_STATE_INTEND_TO_BLOCK;
-
   /*
    *  Note what we are waiting for BEFORE we enter the critical section.
    *  The interrupt critical section management code needs this to be
@@ -98,21 +96,21 @@ rtems_status_code _Event_Seize(
   executing->Wait.option = option_set;
   executing->Wait.count = event_in;
   executing->Wait.return_argument = event_out;
-  _Thread_Wait_flags_set( executing, intend_to_block );
+  wait_flags = _Thread_Wait_flags_start( executing, wait_class );
 
   cpu_self = _Thread_Dispatch_disable_critical( lock_context );
   _Thread_Wait_release_default( executing, lock_context );
 
   if ( ticks ) {
-    _Thread_Add_timeout_ticks( executing, cpu_self, ticks );
+    _Thread_Add_timeout_ticks( executing, cpu_self, ticks, wait_flags );
   }
 
   _Thread_Set_state( executing, block_state );
 
   success = _Thread_Wait_flags_try_change_acquire(
     executing,
-    intend_to_block,
-    wait_class | THREAD_WAIT_STATE_BLOCKED
+    wait_flags,
+    wait_flags | THREAD_WAIT_STATE_BLOCKED
   );
   if ( !success ) {
     _Thread_Timer_remove( executing );

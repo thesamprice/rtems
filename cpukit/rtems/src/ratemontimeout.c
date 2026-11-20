@@ -57,8 +57,8 @@ static void _Rate_monotonic_Renew_deadline(
 
   the_period->state = RATE_MONOTONIC_EXPIRED;
 
-  deadline = _Watchdog_Per_CPU_insert_ticks(
-    &the_period->Timer,
+  deadline = _Rate_monotonic_Insert_timer(
+    the_period,
     _Per_CPU_Get(),
     the_period->next_length
   );
@@ -67,7 +67,10 @@ static void _Rate_monotonic_Renew_deadline(
   _Rate_monotonic_Release( the_period, lock_context );
 }
 
-void _Rate_monotonic_Timeout( Watchdog_Control *the_watchdog )
+void _Rate_monotonic_Timeout(
+  Watchdog_Control *the_watchdog,
+  unsigned int      token
+)
 {
   Rate_monotonic_Control *the_period;
   Thread_Control         *owner;
@@ -83,29 +86,38 @@ void _Rate_monotonic_Timeout( Watchdog_Control *the_watchdog )
 
   _ISR_lock_ISR_disable( &lock_context );
   _Rate_monotonic_Acquire_critical( the_period, &lock_context );
+
+#if defined( RTEMS_SMP )
+  /*
+   * _Watchdog_Do_tickle() reads the token under the lock of the header, so
+   * the token names the schedule which expired.  A party which ends that
+   * schedule steps the generation of the period.  A tickle of a watchdog runs
+   * with thread dispatch disabled, so only another processor can end the
+   * schedule here.
+   */
+  if ( token != the_period->timer_generation ) {
+    _Rate_monotonic_Release( the_period, &lock_context );
+    return;
+  }
+#else
+  (void) token;
+#endif
+
   wait_flags = _Thread_Wait_flags_get( owner );
 
   if (
     ( wait_flags & THREAD_WAIT_CLASS_PERIOD ) != 0 &&
     owner->Wait.return_argument == the_period
   ) {
-    bool unblock;
-    bool success;
+    Thread_Wait_flags previous_wait_flags;
+    bool              unblock;
 
     owner->Wait.return_argument = NULL;
-
-    success = _Thread_Wait_flags_try_change_release(
+    previous_wait_flags = _Thread_Wait_flags_exchange_release(
       owner,
-      RATE_MONOTONIC_INTEND_TO_BLOCK,
-      THREAD_WAIT_STATE_READY
+      _Thread_Wait_flags_end( wait_flags )
     );
-    if ( success ) {
-      unblock = false;
-    } else {
-      _Assert( _Thread_Wait_flags_get( owner ) == RATE_MONOTONIC_BLOCKED );
-      _Thread_Wait_flags_set( owner, THREAD_WAIT_STATE_READY );
-      unblock = true;
-    }
+    unblock = ( previous_wait_flags & THREAD_WAIT_STATE_BLOCKED ) != 0U;
 
     _Rate_monotonic_Restart( the_period, owner, &lock_context );
 

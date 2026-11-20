@@ -13,7 +13,7 @@
 /*
  *  COPYRIGHT (c) 1989-2010.
  *  On-Line Applications Research Corporation (OAR).
- *  Copyright (c) 2016 embedded brains GmbH & Co. KG
+ *  Copyright (C) 2016, 2026 embedded brains GmbH & Co. KG
  *  COPYRIGHT (c) 2016 Kuan-Hsun Chen.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -118,11 +118,7 @@ static void _Rate_monotonic_Release_job(
 
   cpu_self = _Thread_Dispatch_disable_critical( lock_context );
 
-  deadline = _Watchdog_Per_CPU_insert_ticks(
-    &the_period->Timer,
-    cpu_self,
-    next_length
-  );
+  deadline = _Rate_monotonic_Insert_timer( the_period, cpu_self, next_length );
   _Scheduler_Release_job(
     owner,
     &the_period->Priority,
@@ -247,8 +243,9 @@ static rtems_status_code _Rate_monotonic_Block_while_active(
   ISR_lock_Context       *lock_context
 )
 {
-  Per_CPU_Control *cpu_self;
-  bool             success;
+  Thread_Wait_flags wait_flags;
+  bool              success;
+  Per_CPU_Control  *cpu_self;
 
   /*
    *  Update statistics from the concluding period.
@@ -262,7 +259,7 @@ static rtems_status_code _Rate_monotonic_Block_while_active(
    */
   the_period->next_length = length;
   executing->Wait.return_argument = the_period;
-  _Thread_Wait_flags_set( executing, RATE_MONOTONIC_INTEND_TO_BLOCK );
+  wait_flags = _Thread_Wait_flags_start( executing, THREAD_WAIT_CLASS_PERIOD );
 
   cpu_self = _Thread_Dispatch_disable_critical( lock_context );
   _Rate_monotonic_Release( the_period, lock_context );
@@ -271,11 +268,13 @@ static rtems_status_code _Rate_monotonic_Block_while_active(
 
   success = _Thread_Wait_flags_try_change_acquire(
     executing,
-    RATE_MONOTONIC_INTEND_TO_BLOCK,
-    RATE_MONOTONIC_BLOCKED
+    wait_flags,
+    wait_flags | THREAD_WAIT_STATE_BLOCKED
   );
   if ( !success ) {
-    _Assert( _Thread_Wait_flags_get( executing ) == THREAD_WAIT_STATE_READY );
+    _Assert(
+      ( _Thread_Wait_flags_get( executing ) & THREAD_WAIT_MASK ) == 0U
+    );
     _Thread_Unblock( executing );
   }
 

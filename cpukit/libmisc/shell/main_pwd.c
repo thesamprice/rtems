@@ -37,6 +37,7 @@
 #include "config.h"
 #endif
 
+#include <limits.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -49,10 +50,15 @@ static int rtems_shell_main_pwd(
   char *argv[] RTEMS_UNUSED
 )
 {
-  char dir[1024];
+  char dir[PATH_MAX];
 
-  getcwd(dir,1024);
-  puts(dir);
+  char *result = getcwd(dir, sizeof(dir));
+  if (result != NULL) {
+    puts(result);
+  } else {
+    printf("getcwd failed: errno=%d\n", errno);
+  }
+  
   return 0;
 }
 

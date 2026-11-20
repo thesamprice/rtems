@@ -69,8 +69,7 @@ static bool is_blocked( Thread_Wait_flags flags )
 
 static bool interrupts_blocking_op( Thread_Wait_flags flags )
 {
-  return flags ==
-         ( THREAD_WAIT_CLASS_EVENT | THREAD_WAIT_STATE_INTEND_TO_BLOCK );
+  return flags == THREAD_WAIT_CLASS_EVENT;
 }
 
 static T_interrupt_test_state event_from_isr_interrupt( void *arg )
@@ -85,7 +84,7 @@ static T_interrupt_test_state event_from_isr_interrupt( void *arg )
   }
 
   ctx = arg;
-  flags = _Thread_Wait_flags_get( ctx->main_thread );
+  flags = _Thread_Wait_flags_get( ctx->main_thread ) & THREAD_WAIT_MASK;
 
   if ( interrupts_blocking_op( flags ) ) {
     /*
@@ -174,7 +173,7 @@ static T_interrupt_test_state event_with_timeout_from_isr_interrupt(
   }
 
   ctx = arg;
-  flags = _Thread_Wait_flags_get( ctx->main_thread );
+  flags = _Thread_Wait_flags_get( ctx->main_thread ) & THREAD_WAIT_MASK;
 
   if ( interrupts_blocking_op( flags ) ) {
     /*

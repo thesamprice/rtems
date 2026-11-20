@@ -13,6 +13,8 @@ links:
 - role: build-dependency
   uid: objnodebug
 - role: build-dependency
+  uid: bsps/objmips
+- role: build-dependency
   uid: objpreinitarray
 - role: build-dependency
   uid: objmrsp
@@ -32,6 +34,7 @@ source:
 - testsuites/validation/tc-clock-get-tod.c
 - testsuites/validation/tc-clock-get-uptime.c
 - testsuites/validation/tc-clock-nanosleep.c
+- testsuites/validation/tc-clock-set-no-dispatch.c
 - testsuites/validation/tc-clock-set.c
 - testsuites/validation/tc-cpuuse.c
 - testsuites/validation/tc-events.c

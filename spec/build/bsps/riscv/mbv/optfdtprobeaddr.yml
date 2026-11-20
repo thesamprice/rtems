@@ -1,0 +1,21 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-integer: null
+- assert-uint32: null
+- format-and-define: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price
+default:
+- enabled-by: true
+  value: 0x00000000
+description: |
+  address at which the BSP looks for a device tree blob when no boot loader
+  handed one over, or zero to not look for one at all; the address must be
+  readable at reset and should be outside the RTEMS memory region, for example
+  in the LMB BRAM of the design
+enabled-by: true
+format: '{:#010x}'
+links: []
+name: MBV_FDT_PROBE_ADDRESS
+type: build

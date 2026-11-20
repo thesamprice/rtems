@@ -61,11 +61,9 @@ static T_interrupt_test_state release_semaphore( void *arg )
   Thread_Wait_flags      flags;
   T_interrupt_test_state state;
 
-  flags = _Thread_Wait_flags_get( ctx->main_task_control );
+  flags = _Thread_Wait_flags_get( ctx->main_task_control ) & THREAD_WAIT_MASK;
 
-  if (
-    flags == ( THREAD_WAIT_CLASS_OBJECT | THREAD_WAIT_STATE_INTEND_TO_BLOCK )
-  ) {
+  if ( flags == THREAD_WAIT_CLASS_QUEUE ) {
     CORE_semaphore_Control *sem;
 
     state = T_INTERRUPT_TEST_DONE;
@@ -74,13 +72,13 @@ static T_interrupt_test_state release_semaphore( void *arg )
     rtems_test_assert( sc == RTEMS_SUCCESSFUL );
 
     rtems_test_assert(
-      _Thread_Wait_flags_get( ctx->main_task_control ) ==
-      THREAD_WAIT_STATE_READY
+      ( _Thread_Wait_flags_get( ctx->main_task_control ) &
+        THREAD_WAIT_MASK ) == THREAD_WAIT_STATE_READY
     );
     sem = &ctx->semaphore_control->Core_control.Semaphore;
     rtems_test_assert( sem->count == 0 );
   } else {
-    if ( flags == ( THREAD_WAIT_CLASS_OBJECT | THREAD_WAIT_STATE_BLOCKED ) ) {
+    if ( flags == ( THREAD_WAIT_CLASS_QUEUE | THREAD_WAIT_STATE_BLOCKED ) ) {
       state = T_INTERRUPT_TEST_LATE;
     } else {
       state = T_INTERRUPT_TEST_EARLY;

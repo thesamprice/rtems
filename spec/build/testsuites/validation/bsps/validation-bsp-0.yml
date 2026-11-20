@@ -7,6 +7,7 @@ cppflags: []
 cxxflags: []
 enabled-by:
 - bsps/arm/xilinx-zynqmp-rpu
+- bsps/riscv/mbv
 - bsps/sparc/leon3
 features: c cprogram
 includes: []
@@ -18,16 +19,21 @@ links:
 - role: build-dependency
   uid: objgrlib
 - role: build-dependency
+  uid: objmbv
+- role: build-dependency
   uid: objsparcleon3extirq
 - role: build-dependency
   uid: objsparcgr712rc
 - role: build-dependency
   uid: objsparcgr740
+- role: build-dependency
+  uid: objsparcleon3irq
+- role: build-dependency
+  uid: objsparcleon3irqmap
 source:
 - testsuites/validation/bsps/ts-validation-bsp-0.c
 stlib: []
 target: testsuites/validation/bsps/ts-validation-bsp-0.exe
 type: build
-use-after:
-- validation
+use-after: []
 use-before: []

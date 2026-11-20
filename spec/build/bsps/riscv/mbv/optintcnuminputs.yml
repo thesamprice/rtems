@@ -1,0 +1,18 @@
+SPDX-License-Identifier: CC-BY-SA-4.0 OR BSD-2-Clause
+actions:
+- get-integer: null
+- define: null
+build-type: option
+copyrights:
+- Copyright (C) 2026 Samuel Price
+default:
+- enabled-by: true
+  value: 10
+description: |
+  number of hardware interrupt inputs of the Xilinx AXI Interrupt Controller
+  (C_NUM_INTR_INPUTS)
+enabled-by: true
+format: '{}'
+links: []
+name: MBV_INTC_NUM_INTR_INPUTS
+type: build
