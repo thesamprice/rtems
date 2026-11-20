@@ -42,7 +42,10 @@
  * constants were used directly at each point of use.
  */
 mbv_config mbv_cfg = {
+  .intc = MBV_DEVICE( Microblaze_INTC, MBV_INTC_BASE ),
   .timer = MBV_DEVICE( Microblaze_Timer, MBV_TIMER_BASE ),
   .uart_base = (uintptr_t) MBV_UART_BASE,
-  .timer_frequency = MBV_TIMER_FREQUENCY
+  .timer_frequency = MBV_TIMER_FREQUENCY,
+  .intc_kind_of_edge = MBV_INTC_KIND_OF_EDGE,
+  .intc_num_intr_inputs = MBV_INTC_NUM_INTR_INPUTS
 };

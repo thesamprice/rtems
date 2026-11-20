@@ -39,9 +39,11 @@
 #include <bsp.h>
 
 /*
- * The AXI Timer register block is identical to the one used by the MicroBlaze
- * BSPs, so the register definitions are shared with bsps/microblaze.
+ * The AXI Interrupt Controller and AXI Timer register blocks are identical to
+ * the ones used by the MicroBlaze BSPs, so the register definitions are
+ * shared with bsps/microblaze.
  */
+#include <bsp/intc.h>
 #include <bsp/microblaze-timer.h>
 
 #include <stdint.h>
@@ -72,6 +74,14 @@ extern "C" {
  */
 typedef struct {
   /**
+   * @brief The AXI Interrupt Controller of the platform.
+   *
+   * Its interrupt output is wired to the Machine External Interrupt (MEIP) of
+   * the hart.  There is no PLIC and no CLINT on this platform.
+   */
+  volatile Microblaze_INTC *intc;
+
+  /**
    * @brief The dual-channel AXI Timer of the platform.
    *
    * Channel 1 is used as a free-running counter for the CPU counter.
@@ -83,12 +93,30 @@ typedef struct {
 
   /** @brief The input clock frequency of the AXI Timer in Hz. */
   uint32_t timer_frequency;
+
+  /**
+   * @brief The bit mask of edge-triggered interrupt controller inputs.
+   *
+   * This is the kind-of-intr configuration of the AXI Interrupt Controller.
+   * A set bit selects edge-triggered, a clear bit level-sensitive.
+   */
+  uint32_t intc_kind_of_edge;
+
+  /**
+   * @brief The number of hardware inputs of the AXI Interrupt Controller.
+   *
+   * This is the C_NUM_INTR_INPUTS configuration.  Inputs 0 up to this number
+   * minus one are connected to peripherals.
+   */
+  uint32_t intc_num_intr_inputs;
 } mbv_config;
 
 /**
  * @brief The device configuration in use by this BSP.
  */
 extern mbv_config mbv_cfg;
+
+#define MBV_INTC ( mbv_cfg.intc )
 
 #define MBV_TIMER ( mbv_cfg.timer )
 

@@ -10,5 +10,6 @@ includes: []
 install: []
 links: []
 source:
+- testsuites/validation/bsps/mbv/tc-mbv-intc.c
 - testsuites/validation/bsps/mbv/tc-mbv-uartlite.c
 type: build

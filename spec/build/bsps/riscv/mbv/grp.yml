@@ -35,6 +35,12 @@ links:
 - role: build-dependency
   uid: optextirqmax
 - role: build-dependency
+  uid: optintcbase
+- role: build-dependency
+  uid: optintckindofedge
+- role: build-dependency
+  uid: optintcnuminputs
+- role: build-dependency
   uid: opttimerbase
 - role: build-dependency
   uid: opttimerfreq

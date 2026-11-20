@@ -14,6 +14,7 @@ install:
 - destination: ${BSP_INCLUDEDIR}/bsp
   source:
   - bsps/include/bsp/xil-compat-common.h
+  - bsps/microblaze/microblaze_fpga/include/bsp/intc.h
   - bsps/microblaze/microblaze_fpga/include/bsp/microblaze-timer.h
   - bsps/riscv/mbv/include/bsp/irq.h
   - bsps/riscv/mbv/include/bsp/mbv.h
@@ -39,7 +40,6 @@ source:
 - bsps/shared/dev/serial/console-termios-init.c
 - bsps/shared/dev/serial/console-termios.c
 - bsps/shared/irq/irq-default-handler.c
-- bsps/shared/irq/irq-default.c
 - bsps/shared/start/bspfatal-default.c
 - bsps/shared/start/bspgetworkarea-default.c
 - bsps/shared/start/gettargethash-default.c
