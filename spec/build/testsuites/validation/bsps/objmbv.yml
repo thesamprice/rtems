@@ -11,6 +11,7 @@ install: []
 links: []
 source:
 - testsuites/validation/bsps/mbv/tc-mbv-console-irq.c
+- testsuites/validation/bsps/mbv/tc-mbv-fdt.c
 - testsuites/validation/bsps/mbv/tc-mbv-intc.c
 - testsuites/validation/bsps/mbv/tc-mbv-sw-intr.c
 - testsuites/validation/bsps/mbv/tc-mbv-timer.c
