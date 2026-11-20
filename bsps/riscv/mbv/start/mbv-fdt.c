@@ -36,9 +36,14 @@
 #include <bsp.h>
 #include <bsp/fdt.h>
 #include <bsp/irq.h>
+#include <bsp/mbv.h>
 
 #include <rtems.h>
+#include <rtems/bspIo.h>
+#include <rtems/sysinit.h>
 
+#include <inttypes.h>
+#include <string.h>
 #include <sys/param.h>
 
 #include <libfdt.h>
@@ -182,3 +187,327 @@ uint32_t bsp_fdt_map_intr( const uint32_t *intr, size_t icells )
    */
   return MBV_INTERRUPT_VECTOR_EXTERNAL( intr[ 0 ] );
 }
+
+#ifdef MBV_USE_FDT
+
+/*
+ * The compatible strings of the peripherals.  These are the ones the Xilinx
+ * device tree generator emits and the ones the classic MicroBlaze BSP looks
+ * for, since the platform uses the same IP.
+ */
+#define MBV_FDT_INTC_COMPATIBLE "xlnx,xps-intc-1.00.a"
+#define MBV_FDT_TIMER_COMPATIBLE "xlnx,xps-timer-1.00.a"
+#define MBV_FDT_UARTLITE_COMPATIBLE "xlnx,xps-uartlite-1.00.a"
+
+/**
+ * @brief Finds the node of the index-th enabled device with this compatible
+ *   string.
+ *
+ * Nodes with a status other than "okay" or "ok" are skipped, so that a design
+ * which describes a peripheral it does not populate does not shadow the one it
+ * does.  An absent status property means the device is enabled.
+ *
+ * @return The node offset, or a negative libfdt error code.
+ */
+static int mbv_fdt_find( const void *fdt, const char *compatible, int index )
+{
+  int node = -1;
+
+  for ( ;; ) {
+    const char *status;
+    int         len;
+
+    node = fdt_node_offset_by_compatible( fdt, node, compatible );
+
+    if ( node < 0 ) {
+      return node;
+    }
+
+    status = fdt_getprop( fdt, node, "status", &len );
+
+    if (
+      status != NULL && len > 0 &&
+      strcmp( status, "okay" ) != 0 && strcmp( status, "ok" ) != 0
+    ) {
+      continue;
+    }
+
+    if ( index == 0 ) {
+      return node;
+    }
+
+    --index;
+  }
+}
+
+/**
+ * @brief Returns the first address of the reg property of the node.
+ *
+ * The number of cells which make up the address is a property of the parent
+ * bus, so it has to be asked for rather than assumed.  A design with a 64-bit
+ * address map is described with two address cells even if this BSP is built
+ * for RV32, and an address which does not fit in a pointer is rejected instead
+ * of being truncated.
+ *
+ * @return The address, or @a fallback if the node has no usable reg property.
+ */
+static uintptr_t mbv_fdt_reg( const void *fdt, int node, uintptr_t fallback )
+{
+  const void *val;
+  int         parent;
+  int         ac;
+  int         len;
+  uint64_t    addr;
+
+  parent = fdt_parent_offset( fdt, node );
+
+  if ( parent < 0 ) {
+    return fallback;
+  }
+
+  ac = fdt_address_cells( fdt, parent );
+
+  if ( ac != 1 && ac != 2 ) {
+    return fallback;
+  }
+
+  val = fdt_getprop( fdt, node, "reg", &len );
+
+  if ( val == NULL || len < (int) ( (unsigned int) ac * sizeof( fdt32_t ) ) ) {
+    return fallback;
+  }
+
+  if ( ac == 1 ) {
+    addr = fdt32_ld( (const fdt32_t *) val );
+  } else {
+    addr = fdt64_ld( (const fdt64_t *) val );
+  }
+
+#if UINTPTR_MAX < UINT64_MAX
+  if ( addr > UINTPTR_MAX ) {
+    return fallback;
+  }
+#endif
+
+  return (uintptr_t) addr;
+}
+
+/**
+ * @brief Returns the first cell of a property of the node.
+ *
+ * @return The value, or @a fallback if the node has no such property.
+ */
+static uint32_t mbv_fdt_u32(
+  const void *fdt,
+  int         node,
+  const char *name,
+  uint32_t    fallback
+)
+{
+  const void *val;
+  int         len;
+
+  val = fdt_getprop( fdt, node, name, &len );
+
+  if ( val == NULL || len < (int) sizeof( fdt32_t ) ) {
+    return fallback;
+  }
+
+  return fdt32_ld( (const fdt32_t *) val );
+}
+
+/**
+ * @brief Returns the interrupt controller input of the node.
+ *
+ * The interrupt parent of every peripheral is the AXI Interrupt Controller,
+ * which uses two interrupt cells.  The first is the controller input, the
+ * second the kind of interrupt, which the BSP takes from the kind-of-intr
+ * property of the controller itself instead.
+ *
+ * An input the BSP has no vector for is rejected.  The vector count is a
+ * compile time constant, since the generic interrupt support sizes its handler
+ * table with it, so honouring such an input would make the interrupt dispatch
+ * index past the end of that table.  Rejecting it leaves the device on the
+ * input the build option names, which is wrong but bounded.
+ *
+ * This is only reported and never fatal.  It runs before the console driver
+ * exists, so a fatal error here would be an unexplained hang.
+ *
+ * @return The interrupt controller input, or @a fallback.
+ */
+static uint32_t mbv_fdt_irq(
+  const void *fdt,
+  int         node,
+  const char *what,
+  uint32_t    fallback
+)
+{
+  uint32_t irq;
+
+  irq = mbv_fdt_u32( fdt, node, "interrupts", fallback );
+
+  if ( irq >= MBV_MAXIMUM_EXTERNAL_INTERRUPTS ) {
+    printk(
+      "mbv: device tree puts the %s on interrupt controller input %" PRIu32
+        ", but only %u inputs are supported, using %" PRIu32 "\n",
+      what,
+      irq,
+      (unsigned int) MBV_MAXIMUM_EXTERNAL_INTERRUPTS,
+      fallback
+    );
+
+    return fallback;
+  }
+
+  return irq;
+}
+
+static void mbv_fdt_configure( const void *fdt )
+{
+  int node;
+
+  node = mbv_fdt_find( fdt, MBV_FDT_INTC_COMPATIBLE, 0 );
+
+  if ( node >= 0 ) {
+    uint32_t inputs;
+    uint32_t sw_intr;
+
+    mbv_cfg.intc = MBV_DEVICE(
+      Microblaze_INTC,
+      mbv_fdt_reg( fdt, node, (uintptr_t) mbv_cfg.intc )
+    );
+    mbv_cfg.intc_kind_of_edge = mbv_fdt_u32(
+      fdt,
+      node,
+      "xlnx,kind-of-intr",
+      mbv_cfg.intc_kind_of_edge
+    );
+
+    /*
+     * A design without software interrupts may omit the property, since zero
+     * is the default of C_NUM_SW_INTR.  A tree which describes the interrupt
+     * controller is authoritative about them, so do not fall back to the
+     * build option.
+     */
+    inputs = mbv_fdt_u32(
+      fdt,
+      node,
+      "xlnx,num-intr-inputs",
+      mbv_cfg.intc_num_intr_inputs
+    );
+    sw_intr = mbv_fdt_u32( fdt, node, "xlnx,num-sw-intr", 0 );
+
+    if (
+      inputs > MBV_MAXIMUM_EXTERNAL_INTERRUPTS ||
+      sw_intr > MBV_MAXIMUM_EXTERNAL_INTERRUPTS - inputs
+    ) {
+      printk(
+        "mbv: device tree interrupt controller has %" PRIu32 " inputs and %"
+          PRIu32 " software interrupts, but only %u are supported\n",
+        inputs,
+        sw_intr,
+        (unsigned int) MBV_MAXIMUM_EXTERNAL_INTERRUPTS
+      );
+
+      if ( inputs > MBV_MAXIMUM_EXTERNAL_INTERRUPTS ) {
+        inputs = MBV_MAXIMUM_EXTERNAL_INTERRUPTS;
+      }
+
+      sw_intr = MBV_MAXIMUM_EXTERNAL_INTERRUPTS - inputs;
+    }
+
+    mbv_cfg.intc_num_intr_inputs = inputs;
+    mbv_cfg.intc_num_sw_intr = sw_intr;
+  }
+
+  /*
+   * The clock tick and the free running counter of the timecounter are the two
+   * channels of the first AXI Timer the tree lists.
+   */
+  node = mbv_fdt_find( fdt, MBV_FDT_TIMER_COMPATIBLE, 0 );
+
+  if ( node >= 0 ) {
+    mbv_cfg.timer = MBV_DEVICE(
+      Microblaze_Timer,
+      mbv_fdt_reg( fdt, node, (uintptr_t) mbv_cfg.timer )
+    );
+    mbv_cfg.timer_frequency = mbv_fdt_u32(
+      fdt,
+      node,
+      "clock-frequency",
+      mbv_cfg.timer_frequency
+    );
+    mbv_cfg.timer_irq =
+      mbv_fdt_irq( fdt, node, "clock tick timer", mbv_cfg.timer_irq );
+  }
+
+  node = mbv_fdt_find( fdt, MBV_FDT_UARTLITE_COMPATIBLE, 0 );
+
+  if ( node >= 0 ) {
+    mbv_cfg.uart_base = mbv_fdt_reg( fdt, node, mbv_cfg.uart_base );
+    mbv_cfg.uart_irq =
+      mbv_fdt_irq( fdt, node, "UART Lite", mbv_cfg.uart_irq );
+  }
+}
+
+#endif /* MBV_USE_FDT */
+
+#if MBV_FDT_PROBE_ADDRESS != 0
+/**
+ * @brief Looks for a device tree blob at a fixed address.
+ *
+ * A platform without a boot loader has no way to hand a device tree pointer to
+ * the program, so the only thing left is to agree on an address.  The QEMU
+ * amd-microblaze-v-generic machine is such a platform: it synthesizes no
+ * device tree, has no mask ROM to run before the program, and leaves a1 zero,
+ * but a blob can be loaded anywhere in its address space with
+ *
+ *   -device loader,file=<blob>,addr=<address>,force-raw=on
+ *
+ * The address is validated, and an address at which there is no device tree is
+ * not an error: probing is a guess, and a guess which does not pan out has to
+ * leave the BSP with its build time configuration rather than stop it.  Note
+ * that the address does have to be readable, since there is nothing else that
+ * could tell the difference between unmapped memory and memory holding no
+ * device tree.
+ */
+static void mbv_fdt_probe( void )
+{
+  /*
+   * A device tree from a boot loader wins.  The start code has already copied
+   * it into the blob by the time this runs, which is what makes the pointer
+   * differ from the empty tree.
+   */
+  if ( mbv_fdt != &mbv_fdt_empty_tree[ 0 ] ) {
+    return;
+  }
+
+  bsp_fdt_copy( (const void *) (uintptr_t) MBV_FDT_PROBE_ADDRESS );
+}
+#endif /* MBV_FDT_PROBE_ADDRESS */
+
+#if defined( MBV_USE_FDT ) || MBV_FDT_PROBE_ADDRESS != 0
+/*
+ * Find and parse the device tree before the interrupt controller is
+ * initialized by bsp_start() at RTEMS_SYSINIT_BSP_START and before the free
+ * running counter is started at RTEMS_SYSINIT_CPU_COUNTER.
+ * RTEMS_SYSINIT_BSP_EARLY also precedes RTEMS_SYSINIT_ZERO_MEMORY and
+ * RTEMS_SYSINIT_WORKSPACE, so a device tree which happens to live inside the
+ * RTEMS memory region has already been copied out of it by then.
+ */
+static void mbv_fdt_initialize( void )
+{
+#if MBV_FDT_PROBE_ADDRESS != 0
+  mbv_fdt_probe();
+#endif
+#ifdef MBV_USE_FDT
+  mbv_fdt_configure( mbv_fdt );
+#endif
+}
+
+RTEMS_SYSINIT_ITEM(
+  mbv_fdt_initialize,
+  RTEMS_SYSINIT_BSP_EARLY,
+  RTEMS_SYSINIT_ORDER_FIRST
+);
+#endif
