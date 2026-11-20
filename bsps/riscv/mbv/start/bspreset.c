@@ -34,13 +34,79 @@
  */
 
 #include <bsp/bootcard.h>
+#include <bsp/fdt.h>
+
+#include <libfdt.h>
+
+/*
+ * Shut the board down through a SiFive test finisher if the device tree
+ * declares one.
+ *
+ * Without this the only thing bsp_reset() can do is spin, which leaves a
+ * simulator running after the system has halted.  An automated test runner
+ * then cannot tell a test which failed and shut down from one which hung, and
+ * every test costs the runner's full timeout however quickly it finishes.
+ *
+ * Fall back to spinning when there is no such device, which is the case on
+ * real hardware.
+ */
+
+#define SIFIVE_TEST_FINISHER_PASS 0x5555U
+
+#define SIFIVE_TEST_FINISHER_FAIL 0x3333U
+
+/*
+ * Only a regular exit with status zero is a pass.  Any other exit status and
+ * any other fatal error are a fail, with the low 16 bits of the code as the
+ * exit status QEMU reports.
+ */
+static uint32_t mbv_finisher_value(
+  rtems_fatal_source source,
+  rtems_fatal_code   code
+)
+{
+  if ( source == RTEMS_FATAL_SOURCE_EXIT && code == 0 ) {
+    return SIFIVE_TEST_FINISHER_PASS;
+  }
+
+  if ( ( code & 0xffffU ) == 0 ) {
+    /* A fail with exit status zero would read as a pass */
+    code = 1;
+  }
+
+  return SIFIVE_TEST_FINISHER_FAIL | ( (uint32_t) code << 16 );
+}
 
 void bsp_reset( rtems_fatal_source source, rtems_fatal_code code )
 {
-  (void) source;
-  (void) code;
+  const void *fdt;
+  int         node;
+
+  fdt = bsp_fdt_get();
+  node = fdt_node_offset_by_compatible( fdt, -1, "sifive,test0" );
+
+  if ( node >= 0 ) {
+    int            len;
+    const uint32_t *reg;
+
+    reg = fdt_getprop( fdt, node, "reg", &len );
+
+    if ( reg != NULL && len >= (int) sizeof( *reg ) ) {
+      volatile uint32_t *finisher;
+
+      finisher = (volatile uint32_t *) (uintptr_t) fdt32_to_cpu( reg[ 0 ] );
+
+      uint32_t value;
+
+      value = mbv_finisher_value( source, code );
+
+      while ( true ) {
+        *finisher = value;
+      }
+    }
+  }
 
   while ( true ) {
-    /* There is nothing to reset the system with, so halt here */
+    /* Nothing to shut down, so halt here. */
   }
 }
