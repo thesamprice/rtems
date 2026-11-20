@@ -84,7 +84,9 @@ typedef struct {
   /**
    * @brief The dual-channel AXI Timer of the platform.
    *
-   * Channel 1 is used as a free-running counter for the CPU counter.
+   * Channel 0 generates the clock tick via interrupt controller input
+   * #timer_irq.  Channel 1 is used as a free-running counter for the
+   * timecounter and the CPU counter.
    */
   volatile Microblaze_Timer *timer;
 
@@ -119,6 +121,9 @@ typedef struct {
    * is set, so they are the only software-raisable interrupts.
    */
   uint32_t intc_num_sw_intr;
+
+  /** @brief The interrupt controller input of #timer channel 0. */
+  uint32_t timer_irq;
 
   /** @brief The interrupt controller input of the AXI UART Lite. */
   uint32_t uart_irq;

@@ -28,6 +28,7 @@ links: []
 source:
 - bsps/microblaze/shared/dev/serial/uartlite.c
 - bsps/microblaze/shared/dev/serial/uartlite_l.c
+- bsps/riscv/mbv/clock/clockdrv.c
 - bsps/riscv/mbv/clock/mbv-counter.c
 - bsps/riscv/mbv/console/console-config.c
 - bsps/riscv/mbv/irq/irq.c
@@ -36,7 +37,6 @@ source:
 - bsps/riscv/mbv/start/mbv-config.c
 - bsps/shared/cache/nocache.c
 - bsps/shared/dev/btimer/btimer-cpucounter.c
-- bsps/shared/dev/clock/clock-simidle.c
 - bsps/shared/dev/getentropy/getentropy-cpucounter.c
 - bsps/shared/dev/serial/console-termios-init.c
 - bsps/shared/dev/serial/console-termios.c

@@ -49,5 +49,6 @@ mbv_config mbv_cfg = {
   .intc_kind_of_edge = MBV_INTC_KIND_OF_EDGE,
   .intc_num_intr_inputs = MBV_INTC_NUM_INTR_INPUTS,
   .intc_num_sw_intr = MBV_INTC_NUM_SW_INTR,
+  .timer_irq = MBV_TIMER_IRQ,
   .uart_irq = MBV_UART_IRQ
 };

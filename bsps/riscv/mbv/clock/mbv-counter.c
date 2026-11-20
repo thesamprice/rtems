@@ -54,9 +54,9 @@ static void mbv_counter_initialize( void )
   volatile Microblaze_Timer *timer = MBV_TIMER;
 
   /*
-   * Channel 1: free-running up counter used by the CPU counter.  With a load
-   * value of zero and auto reload, the counter wraps through the full 32-bit
-   * range.  No interrupt is generated.
+   * Channel 1: free-running up counter used by the CPU counter and the
+   * timecounter.  With a load value of zero and auto reload, the counter
+   * wraps through the full 32-bit range.  No interrupt is generated.
    *
    * This runs from a system initialization item so that the CPU counter
    * works in applications which do not need the clock driver.

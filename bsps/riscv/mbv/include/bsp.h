@@ -60,14 +60,6 @@
 extern "C" {
 #endif
 
-/*
- * There is no clock driver yet.  The clock ticks are simulated by the IDLE
- * task.
- */
-#define BSP_IDLE_TASK_BODY clock_driver_sim_idle_body
-
-void *clock_driver_sim_idle_body( uintptr_t ignored );
-
 #ifdef __cplusplus
 }
 #endif
