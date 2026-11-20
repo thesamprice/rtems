@@ -7,12 +7,23 @@ build-type: option
 copyrights:
 - Copyright (C) 2026 Samuel Price
 default:
+- enabled-by: riscv/mbv64
+  value:
+  - -march=rv64imac_zicsr_zifencei
+  - -mabi=lp64
+  - -mcmodel=medany
 - enabled-by: true
   value:
   - -march=rv32imafc_zicsr_zifencei
   - -mabi=ilp32f
 description: |
-  ABI flags
+  ABI flags.
+
+  The QEMU amd-microblaze-v-generic machine disables the double precision
+  floating point extension of its hart, so the RV64 variant would need an
+  rv64imafc multilib with the lp64f ABI to use the hardware floating point
+  unit.  The RTEMS tool chain does not provide one, hence the RV64 variant
+  uses the integer ABI and the soft float library.
 enabled-by: true
 links: []
 name: ABI_FLAGS
